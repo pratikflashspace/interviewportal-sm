@@ -3,9 +3,35 @@ Creates a unique schema, tests against it and drops only that schema afterwards.
 Never set this variable to a production database in Render's build settings.
 """
 import io,json,os,unittest,uuid
-from urllib.parse import urlsplit,urlunsplit,parse_qsl,urlencode
+from urllib.parse import urlsplit,urlunsplit,parse_qsl,urlencode,quote
 from unittest.mock import patch
 from backend.server import App
+
+
+def schema_test_url(url, schema):
+    p=urlsplit(url);q=dict(parse_qsl(p.query));q['options']='-c search_path='+schema
+    # libpq decodes %20 as a space, but treats form-encoded '+' literally.
+    return urlunsplit((p.scheme,p.netloc,p.path,urlencode(q,quote_via=quote),p.fragment))
+
+
+class PostgresTestURLTests(unittest.TestCase):
+    def test_schema_options_use_percent_encoded_spaces(self):
+        from psycopg.conninfo import conninfo_to_dict
+        scoped=schema_test_url('postgresql://localhost/interview_test','fs_test_encoding')
+        self.assertIn('options=-c%20search_path%3Dfs_test_encoding',scoped)
+        self.assertNotIn('+',urlsplit(scoped).query)
+        self.assertEqual(conninfo_to_dict(scoped)['options'],'-c search_path=fs_test_encoding')
+
+    def test_schema_url_preserves_provider_connection_options(self):
+        from psycopg.conninfo import conninfo_to_dict
+        scoped=schema_test_url('postgresql://localhost/interview_test?sslmode=require&channel_binding=require&application_name=ci%2Bprobe','fs_test_options')
+        parsed=conninfo_to_dict(scoped)
+        self.assertEqual(parsed['sslmode'],'require')
+        self.assertEqual(parsed['channel_binding'],'require')
+        self.assertEqual(parsed['application_name'],'ci+probe')
+        self.assertEqual(parsed['dbname'],'interview_test')
+        self.assertEqual(parsed['options'],'-c search_path=fs_test_options')
+
 
 @unittest.skipUnless(os.getenv('TEST_POSTGRES_URL'),'No disposable Postgres test connection configured')
 class RealPostgresTest(unittest.TestCase):
@@ -14,8 +40,7 @@ class RealPostgresTest(unittest.TestCase):
         url=os.environ['TEST_POSTGRES_URL'];schema='fs_test_'+uuid.uuid4().hex
         with psycopg.connect(url,autocommit=True) as conn:conn.execute(f'CREATE SCHEMA {schema}')
         try:
-            p=urlsplit(url);q=dict(parse_qsl(p.query));q['options']='-c search_path='+schema
-            scoped=urlunsplit((p.scheme,p.netloc,p.path,urlencode(q),p.fragment))
+            scoped=schema_test_url(url,schema)
             with patch.dict(os.environ,{'DATABASE_URL':scoped,'ADMIN_EMAIL':'','REQUIRE_DATABASE_URL':'','RENDER':''}):
                 role={'id':'test','title':'Test role','department':'Test','location':'Remote','type':'Full-time','experience':'Any','description':'Test description','details':'Test requirements','skills':['Testing'],'published':True}
                 class AI:
