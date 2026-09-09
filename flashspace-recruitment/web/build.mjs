@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 const cwd=path.dirname(fileURLToPath(import.meta.url));process.chdir(cwd);
 await fs.rm('dist',{recursive:true,force:true});await fs.mkdir('dist/assets',{recursive:true});
-await build({entryPoints:['src/main.jsx'],outfile:'dist/assets/app.js',bundle:true,minify:true,format:'iife',target:['es2020'],define:{'process.env.NODE_ENV':'"production"'},alias:{'@kits/shadcn-ui':path.resolve('ui/index.jsx')},legalComments:'eof'});
+await build({jsx:'automatic',entryPoints:['src/main.jsx'],outfile:'dist/assets/app.js',bundle:true,minify:true,format:'iife',target:['es2020'],define:{'process.env.NODE_ENV':'"production"'},alias:{'@kits/shadcn-ui':path.resolve('ui/index.jsx')},legalComments:'eof'});
 const names=['background','foreground','card','card-foreground','popover','popover-foreground','primary','primary-foreground','secondary','secondary-foreground','muted','muted-foreground','accent','accent-foreground','destructive','destructive-foreground','border','input','ring'];
 const colors=Object.fromEntries(names.map(n=>[n,`var(--${n})`]));
 const css=await fs.readFile('dist/assets/app.css','utf8');
