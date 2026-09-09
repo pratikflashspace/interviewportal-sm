@@ -1,0 +1,50 @@
+[
+  {
+    "id": "growth",
+    "title": "Growth & Partnerships",
+    "department": "Growth",
+    "location": "New Delhi · Hybrid",
+    "type": "Full-time",
+    "experience": "1-3 years experience",
+    "description": "Turn conversations into partnerships. Help ambitious businesses find their next workspace.",
+    "details": "Build a partner pipeline, understand customer needs, and develop experiments that bring new businesses into the Flashspace community.",
+    "skills": [
+      "Business development",
+      "Partnerships",
+      "CRM"
+    ],
+    "published": false
+  },
+  {
+    "id": "community",
+    "title": "Community Associate",
+    "department": "Community",
+    "location": "New Delhi · On-site",
+    "type": "Full-time",
+    "experience": "0-2 years experience",
+    "description": "Make every member feel at home. Create the connections that turn a space into a community.",
+    "details": "Support members day to day, coordinate community events and resolve operational issues with a thoughtful, practical approach.",
+    "skills": [
+      "Member experience",
+      "Events",
+      "Operations"
+    ],
+    "published": false
+  },
+  {
+    "id": "engineering",
+    "title": "Full-stack Developer",
+    "department": "Engineering",
+    "location": "Remote · India",
+    "type": "Full-time",
+    "experience": "2-4 years experience",
+    "description": "Build useful things, end to end. Shape the digital tools that power a better workspace experience.",
+    "details": "Ship accessible customer interfaces, reliable APIs and internal tools. Work closely with operations to turn real user needs into software.",
+    "skills": [
+      "React",
+      "Python",
+      "APIs"
+    ],
+    "published": false
+  }
+]

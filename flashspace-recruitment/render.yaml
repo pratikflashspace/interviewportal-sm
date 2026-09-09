@@ -1,0 +1,38 @@
+# Render Free hosting. External PostgreSQL is mandatory; no persistent disk.
+# Cloudflare inference may incur charges. Review the account's AI budget separately.
+services:
+  - type: web
+    name: flashspace-careers
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt && python -m unittest discover -s tests
+    startCommand: gunicorn 'backend.server:create_app()' --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120 --access-logfile /dev/null
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: REQUIRE_DATABASE_URL
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_GATEWAY_ID
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+      - key: CLOUDFLARE_LLM_MODEL
+        value: "@cf/meta/llama-3.1-8b-instruct-fast"
+      - key: CLOUDFLARE_TTS_SPEAKER
+        value: luna
+      - key: CLICKUP_API_TOKEN
+        sync: false
+      - key: CLICKUP_FOLDER_ID
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: MAX_AI_CALLS_PER_DAY
+        value: "100"
