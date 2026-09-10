@@ -26,20 +26,18 @@ await page.route('**/api/**',async route=>{const req=route.request(),p=new URL(r
  else return route.fulfill({status:404,contentType:'application/json',body:JSON.stringify({error:'Unexpected API'})});
  return route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
 });
+const listening=()=>page.getByRole('status').filter({hasText:'Listening — take your time'}).waitFor({timeout:20000});
 try{
  await page.goto(origin);assert.equal(await page.locator('.recording-dock').count(),0);assert.equal(requests.length,0);
- await page.getByRole('checkbox').check();await page.getByRole('button',{name:'Begin / resume interview',exact:true}).click();
- await page.getByRole('heading',{name:'Listening — take your time',exact:true}).waitFor({timeout:20000});
+ await page.getByRole('checkbox').check();await page.getByRole('button',{name:'Begin / resume interview',exact:true}).click();await listening();
  const active=await page.locator('video').evaluate(v=>v.srcObject?.getVideoTracks()[0]?.readyState);assert.equal(active,'live');
  for(let i=0;i<4;i++){
-  await page.getByRole('heading',{name:'Listening — take your time',exact:true}).waitFor({timeout:20000});
-  await page.locator('#interview-answer').fill('I completed a fictional project and measured its outcomes.');
-  await page.getByRole('button',{name:'I’m finished answering'}).click();
-  if(i<3)await page.getByText(`${i+1}/4 answers saved`,{exact:true}).waitFor();
+  await listening();await page.locator('#interview-answer').fill('I completed a fictional project and measured its outcomes.');
+  await page.getByRole('button',{name:'I’m finished answering'}).click();if(i<3)await page.getByText(`${i+1}/4 answers saved`,{exact:true}).waitFor();
  }
  await page.getByRole('heading',{name:'Interview completed',exact:true}).waitFor({timeout:20000});assert.ok(submitted);assert.ok(finished);assert.equal(requests.filter(x=>x==='/api/recordings').length,1);
  console.log('PASS application-bound Begin, camera/mixed audio, four turns, upload finalization, submission; no floating recorder');
  await page.goto(origin+'/review');await page.getByRole('heading',{name:'Interview recording'}).waitFor();await page.getByText('Segment 1 · ready').waitFor();assert.equal(await page.locator('video[controls]').count(),1);console.log('PASS application-specific recruiter recording panel');
- await page.setViewportSize({width:390,height:844});await page.goto(origin);await page.getByRole('heading',{name:'Ready when you are'}).waitFor();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);console.log('PASS narrow-screen layout');assert.deepEqual(errors,[]);
+ await page.setViewportSize({width:390,height:844});await page.goto(origin);await page.getByRole('status').filter({hasText:'Ready when you are'}).waitFor();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);console.log('PASS narrow-screen layout');assert.deepEqual(errors,[]);
 }catch(e){e.message+=' | SYNTHETIC UI: '+(await page.locator('body').innerText()).slice(0,4000)+' | requests: '+JSON.stringify(requests.slice(-20))+' | page errors: '+JSON.stringify(errors);throw e;}
 finally{await browser.close();await new Promise(r=>server.close(r));await fs.rm(temp,{recursive:true,force:true});}
