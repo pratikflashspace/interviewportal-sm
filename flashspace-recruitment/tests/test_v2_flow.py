@@ -6,7 +6,7 @@ class FlowTests(unittest.TestCase):
     def run_flow(self,bank='sales',followup=None):
         f=create_flow(bank,10)
         while f['status']!='completed':
-            f,_=commit_answer(f,'event-'+str(len(f['answers'])),f['version'],f['active']['id'],'A fictional answer.','test-time')
+            f,_=commit_answer(f,'test-event-'+str(len(f['answers'])),f['version'],f['active']['id'],'A fictional answer.','test-time')
             f=resolve_next(f,followup)
         return f
     def test_counts_and_order(self):
@@ -36,6 +36,9 @@ class FlowTests(unittest.TestCase):
         again,fresh=commit_answer(f,'unique-event',0,q,'Answer.','test')
         self.assertFalse(fresh);self.assertEqual(f,again)
         with self.assertRaises(FlowError):commit_answer(f,'unique-event',0,q,'Different','test')
+    def test_short_event_ids_rejected(self):
+        f=create_flow('sales',1)
+        with self.assertRaises(FlowError):commit_answer(f,'event-0',0,f['active']['id'],'Answer','test')
     def test_stale_and_unknown_bank_rejected(self):
         with self.assertRaises(FlowError):create_flow('guessed',1)
         f=create_flow('sales',1)
