@@ -15,6 +15,7 @@ from starlette.routing import Mount, Route, WebSocketRoute
 from websockets.asyncio.client import connect as WebSocketConnect
 from .v2_endpoint import create_app
 from .v2_speech_events import SpeechEvents
+from .server import APIError
 
 LOG=logging.getLogger('flashspace.voice')
 class connect(WebSocketConnect):
@@ -122,13 +123,31 @@ async def voice(socket):
                 release_lease(aid,lease)
                 LOG.info('voice_stream_stopped forwarding_tasks=0')
                 phase='provider_close'
-    except Exception:
-        # Only allowlisted phases are logged; no keys, URLs, candidate IDs,
-        # transcripts or raw upstream exceptions.
-        LOG.warning('voice_failed phase=%s',phase)
-        if not disconnected:
-            try:await socket.send_json({'event':'error','message':'Voice connection unavailable. Pause and reconnect or use typing.'})
-            except Exception:pass
+    except Exception as exc:
+        # Quota runs before Sarvam is contacted. A failed handshake hides its
+        # reason from browsers, so accept ONLY this already-authorized socket
+        # to deliver an error; never start forwarding or bypass the quota.
+        if phase=='quota':
+            limited=isinstance(exc,APIError) and exc.status==429
+            code='usage_limit_reached' if limited else 'usage_check_unavailable'
+            LOG.warning('voice_failed phase=quota reason=%s',code)
+            message=('Interview voice is paused because an application usage limit was reached. '
+                     'Repeated Resume attempts will not clear it. Contact the interview administrator.'
+                     if limited else
+                     'Interview voice is paused because the usage check is temporarily unavailable. '
+                     'Contact the interview administrator if this persists.')
+            if not disconnected:
+                try:
+                    await socket.accept()
+                    await socket.send_json({'event':'error','code':code,'message':message})
+                except Exception:pass
+        else:
+            # Only allowlisted phases are logged; no keys, URLs, candidate IDs,
+            # transcripts or raw upstream exceptions.
+            LOG.warning('voice_failed phase=%s',phase)
+            if not disconnected:
+                try:await socket.send_json({'event':'error','message':'Voice connection unavailable. Pause and reconnect or use typing.'})
+                except Exception:pass
     finally:
         release_lease(aid,lease)
         try:await socket.close(code=1000)
