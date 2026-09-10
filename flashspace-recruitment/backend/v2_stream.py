@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+from contextlib import AsyncExitStack
 from pathlib import Path
 from urllib.parse import urlencode
 from starlette.applications import Starlette
@@ -38,10 +39,49 @@ def clean_event(value):
 backend=None
 # Identity-bearing leases: late cleanup must never remove a newer connection.
 active={}
+# Every question transition closes the voice socket and immediately reopens it.
+# The browser's close handshake finishes before this process has unwound the
+# previous connection, so a replacement waits for the slot to be handed over
+# instead of taking a 403 the candidate can only clear by hand.
+HANDOVER_SECONDS=8
+
+class Superseded(Exception):
+    """A newer authorized connection for the same application took the slot."""
+
+class Lease:
+    __slots__=('superseded','released')
+    def __init__(self):self.superseded=asyncio.Event();self.released=asyncio.Event()
 
 def release_lease(aid,lease):
     if active.get(aid) is lease:
         del active[aid]
+    lease.released.set()
+
+async def unless_superseded(lease,awaitable):
+    """Await `awaitable`, abandoning it as soon as a successor claims the slot."""
+    work=asyncio.ensure_future(awaitable);watch=asyncio.ensure_future(lease.superseded.wait())
+    try:done,_=await asyncio.wait({work,watch},return_when=asyncio.FIRST_COMPLETED)
+    except BaseException:work.cancel();raise
+    finally:watch.cancel()
+    if work in done:return work.result()
+    work.cancel();await asyncio.gather(work,return_exceptions=True)
+    raise Superseded()
+
+async def claim(aid):
+    """Take the application's single voice slot, or None when it will not yield."""
+    incumbent=active.get(aid)
+    if incumbent is not None:
+        # Ownership was verified above, so a second socket for one application is
+        # the same candidate reconnecting. Ask the previous connection to unwind
+        # rather than refusing a reconnect the browser cannot retry on its own.
+        incumbent.superseded.set()
+        try:await asyncio.wait_for(incumbent.released.wait(),HANDOVER_SECONDS)
+        except asyncio.TimeoutError:
+            LOG.warning('voice_rejected reason=active_connection');return None
+        if aid in active:
+            LOG.warning('voice_rejected reason=handover_lost');return None
+        LOG.info('voice_handover_completed')
+    lease=Lease();active[aid]=lease;return lease
 
 async def startup():
     global backend
@@ -70,12 +110,12 @@ async def voice(socket):
     except Exception:
         LOG.warning('voice_rejected reason=session_or_ownership')
         await socket.close(code=1008);return
-    if aid in active:
-        LOG.warning('voice_rejected reason=active_connection')
+    lease=await claim(aid)
+    if lease is None:
         await socket.close(code=1008);return
-    lease=object();active[aid]=lease;phase='quota';disconnected=False
+    phase='quota';disconnected=False
     try:
-        await asyncio.to_thread(backend.ai_quota,a,'voice-session-v2',24)
+        await unless_superseded(lease,asyncio.to_thread(backend.ai_quota,a,'voice-session-v2',24))
         phase='configuration'
         key=os.getenv('SARVAM_API_KEY','').strip()
         if not key or any(c.isspace() for c in key):raise ValueError()
@@ -83,8 +123,12 @@ async def voice(socket):
         query=urlencode({'language_code':'en-IN','model':'saaras:v3-realtime','encoding':'linear16',
                          'sample_rate':16000,'stream_type':'balanced','endpointing':'vad',
                          'silence_duration_ms':1500,'min_speech_duration_ms':250})
-        async with connect(UPSTREAM+'?'+query,additional_headers={'api-subscription-key':key},
-                           open_timeout=15,close_timeout=5,max_size=65536,max_queue=8,ping_interval=20) as upstream:
+        async with AsyncExitStack() as stack:
+            # A slow provider handshake must not outlast the handover window and
+            # strand the reconnect that is already waiting for this slot.
+            upstream=await unless_superseded(lease,stack.enter_async_context(
+                connect(UPSTREAM+'?'+query,additional_headers={'api-subscription-key':key},
+                        open_timeout=15,close_timeout=5,max_size=65536,max_queue=8,ping_interval=20)))
             phase='stream';await socket.send_json({'event':'ready'});started=time.monotonic();total=0
             async def send_audio():
                 nonlocal total,disconnected
@@ -110,7 +154,9 @@ async def voice(socket):
                     await asyncio.sleep(15);await authorized()
                     if time.monotonic()-started>1800:raise ValueError()
                     await upstream.send(json.dumps({'event':'ping'}))
-            tasks=[asyncio.create_task(f()) for f in (send_audio,receive_events,auth_watch)]
+            async def supersede_watch():
+                await lease.superseded.wait();raise Superseded()
+            tasks=[asyncio.create_task(f()) for f in (send_audio,receive_events,auth_watch,supersede_watch)]
             try:
                 done,_=await asyncio.wait(tasks,return_when=asyncio.FIRST_COMPLETED)
                 for task in done:task.result()
@@ -123,6 +169,9 @@ async def voice(socket):
                 release_lease(aid,lease)
                 LOG.info('voice_stream_stopped forwarding_tasks=0')
                 phase='provider_close'
+    except Superseded:
+        # The browser already moved to its replacement socket; this one is spent.
+        LOG.info('voice_superseded phase=%s',phase)
     except Exception as exc:
         # Quota runs before Sarvam is contacted. A failed handshake hides its
         # reason from browsers, so accept ONLY this already-authorized socket

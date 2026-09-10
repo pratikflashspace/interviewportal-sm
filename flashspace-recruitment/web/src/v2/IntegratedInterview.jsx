@@ -28,22 +28,40 @@ export default function IntegratedInterview(){
  async function acceptFlow(f){current.current=f;setFlow(f);intro.current=f.answers.length>0;history.replaceState(null,'','/interview-v2?application='+encodeURIComponent(f.application_id));await restore(f);await allowance(f);const r=await api('/v2/applications/'+f.application_id+'/recordings');setOrphans(r.recordings.filter(x=>x.status==='uploading'));setStatus(f.status==='completed'?'answers-completed':'paused');}
  async function load(aid){if(startGuard.current||saving.current||['recording','uploading'].includes(capture.current?.state))return;setBusy(true);try{await acceptFlow(await api('/v2/applications/'+aid));}catch(e){setError(e.message);}finally{setBusy(false);}}
  async function apply(e){e.preventDefault();setBusy(true);try{await acceptFlow(await api('/v2/applications',{role_id:role,experience,consent:true,consent_version:'flashspace-sarvam-conversation-v2'}));}catch(e){setError(e.message);}finally{setBusy(false);}}
+ function retryable(e){e.retryable=true;return e;}
+ // The server hands the voice slot over to a reconnect, but a lost race or a
+ // cold socket can still refuse the handshake. Retry briefly rather than
+ // stranding the candidate on a manual Resume; never retry a refusal the
+ // server chose to explain, and never retry once listening has started.
  async function connectSpeech(){
+  for(let attempt=0;;attempt++){
+   try{return await openSpeech();}
+   catch(e){
+    if(!e.retryable||attempt>=2||paused.current)throw e;
+    await closeSpeech();await new Promise(r=>setTimeout(r,400*(attempt+1)));
+    if(paused.current)throw Error('Listening cancelled.');
+   }
+  }
+ }
+ async function openSpeech(){
   await closeSpeech();const media=capture.current,run=epoch.current;if(paused.current||media?.state!=='recording')throw Error('Interview paused before listening started.');
   const base=segmentBase.current;segmentBase.current+=10001;await media.context.audioWorklet.addModule('/v2-pcm-worklet.js');if(paused.current||run!==epoch.current)throw Error('Listening cancelled.');
   const processor=new AudioWorkletNode(media.context,'interview-pcm'),input=media.context.createMediaStreamSource(new MediaStream(media.stream.getAudioTracks())),silent=media.context.createGain();silent.gain.value=0;input.connect(processor);processor.connect(silent);silent.connect(media.context.destination);
   const socket=new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/api/v2/voice/'+current.current.application_id);const state={socket,processor,input,silent};speech.current=state;
   processor.port.onmessage=e=>{if(!paused.current&&run===epoch.current&&socket.readyState===1){if(socket.bufferedAmount>64000){pause('Voice network is behind. Interview paused.');return;}socket.send(e.data);}};
-  await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(Error('Voice connection timed out.')),20000);state.cancel=()=>{clearTimeout(t);reject(Error('Listening cancelled.'));};
-   socket.onmessage=e=>{if(run!==epoch.current)return;let msg;try{msg=JSON.parse(e.data);}catch{return;}if(msg.event==='ready'){clearTimeout(t);state.cancel=null;resolve();return;}if(msg.event==='error'){clearTimeout(t);reject(Error(msg.message));pause(msg.message);return;}if(paused.current)return;const index=base+msg.utterance_idx;
+  let live=false;
+  await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(retryable(Error('Voice connection timed out.'))),20000);state.cancel=()=>{clearTimeout(t);reject(Error('Listening cancelled.'));};
+   socket.onmessage=e=>{if(run!==epoch.current)return;let msg;try{msg=JSON.parse(e.data);}catch{return;}if(msg.event==='ready'){clearTimeout(t);state.cancel=null;live=true;resolve();return;}if(msg.event==='error'){clearTimeout(t);reject(Error(msg.message));pause(msg.message);return;}if(paused.current)return;const index=base+msg.utterance_idx;
     if(msg.event==='vad.speech_start'){ctl.current.speechStart(index);stopAudio();}
     if(msg.event==='vad.speech_end')ctl.current.speechEnd();
     if(msg.event==='transcript.partial'){ctl.current.partial(index);stopAudio();}
     if(msg.event==='transcript.final')ctl.current.final(index,msg.text);
     if(ctl.current.transcript().length>6000){pause('Answer exceeds 6000 characters. Review your draft; no text was silently truncated.');setTyping(true);}paint();
    };
-   socket.onerror=()=>{clearTimeout(t);reject(Error('Voice connection failed.'));if(!paused.current)pause('Voice connection failed. Resume when ready.');};
-   socket.onclose=()=>{clearTimeout(t);reject(Error('Voice disconnected.'));if(!paused.current&&run===epoch.current)pause('Voice connection lost. Recording and interview paused.');};
+   // A refusal before 'ready' is a handshake failure the caller can retry; only
+   // a drop after listening began pauses the interview.
+   socket.onerror=()=>{clearTimeout(t);if(!live){reject(retryable(Error('Voice connection failed.')));return;}if(!paused.current)pause('Voice connection failed. Resume when ready.');};
+   socket.onclose=()=>{clearTimeout(t);if(!live){reject(retryable(Error('Voice connection failed.')));return;}if(!paused.current&&run===epoch.current)pause('Voice connection lost. Recording and interview paused.');};
   });
   if(paused.current||run!==epoch.current)throw Error('Listening cancelled.');
  }

@@ -53,25 +53,62 @@ class ReconnectTests(unittest.IsolatedAsyncioTestCase):
                 old.release.set();await asyncio.wait_for(jobs[0],2)
                 # The old connection's outer finally must not remove the new lease.
                 self.assertIn('test-application',bridge.active)
-                third=Socket();await asyncio.wait_for(bridge.voice(third),2)
-                self.assertFalse(third.accepted);self.assertIn(1008,third.closed)
+                lease=bridge.active['test-application']
                 await second.incoming.put({'type':'websocket.disconnect'});new.release.set()
                 await asyncio.wait_for(jobs[1],2)
                 self.assertNotIn('test-application',bridge.active)
+                self.assertTrue(lease.released.is_set())
             finally:
                 old.release.set();new.release.set()
                 for job in jobs:job.cancel()
                 await asyncio.gather(*jobs,return_exceptions=True)
                 bridge.active.clear()
-    async def test_live_stream_still_rejects_duplicate(self):
-        first=Socket();upstream=SlowClose()
-        with patch.object(bridge,'backend',self.backend),patch.object(bridge,'connect',return_value=upstream),patch.dict(os.environ,{'SARVAM_API_KEY':'synthetic-test-only'}):
-            job=asyncio.create_task(bridge.voice(first))
+    async def test_live_stream_hands_the_slot_to_the_reconnect(self):
+        """A question transition closes and immediately reopens the socket."""
+        first,second=Socket(),Socket();old,new=SlowClose(),SlowClose();jobs=[]
+        with patch.object(bridge,'backend',self.backend),patch.object(bridge,'connect',side_effect=[old,new]),patch.dict(os.environ,{'SARVAM_API_KEY':'synthetic-test-only'}):
             try:
+                jobs.append(asyncio.create_task(bridge.voice(first)))
                 await asyncio.wait_for(first.ready.wait(),2)
-                duplicate=Socket();await bridge.voice(duplicate)
-                self.assertFalse(duplicate.accepted);self.assertEqual(duplicate.closed,[1008])
+                # The browser has not disconnected the old socket yet; the live
+                # stream must still stand down so the reconnect can be served.
+                jobs.append(asyncio.create_task(bridge.voice(second)))
+                await asyncio.wait_for(second.ready.wait(),2)
+                self.assertTrue(second.accepted)
+                old.release.set();await asyncio.wait_for(jobs[0],2)
+                self.assertIn('test-application',bridge.active)
                 wrong=Socket('https://wrong.example');await bridge.voice(wrong)
                 self.assertFalse(wrong.accepted)
             finally:
-                upstream.release.set();job.cancel();await asyncio.gather(job,return_exceptions=True);bridge.active.clear()
+                old.release.set();new.release.set()
+                for job in jobs:job.cancel()
+                await asyncio.gather(*jobs,return_exceptions=True);bridge.active.clear()
+
+    async def test_slot_that_will_not_yield_is_still_rejected(self):
+        """Handover is bounded: a stuck connection must not accept a successor."""
+        stuck=bridge.Lease();bridge.active['test-application']=stuck
+        blocked=Socket()
+        with patch.object(bridge,'backend',self.backend),patch.object(bridge,'HANDOVER_SECONDS',0.05):
+            await asyncio.wait_for(bridge.voice(blocked),2)
+        self.assertFalse(blocked.accepted);self.assertEqual(blocked.closed,[1008])
+        self.assertIs(bridge.active.get('test-application'),stuck)
+        bridge.active.clear()
+
+    async def test_superseded_connection_before_provider_releases_the_slot(self):
+        """A reconnect during a slow provider handshake is served, not refused."""
+        first,second=Socket(),Socket();ready=asyncio.Event();new=SlowClose()
+        class Hanging:
+            async def __aenter__(self):ready.set();await asyncio.Future()
+            async def __aexit__(self,*args):return False
+        with patch.object(bridge,'backend',self.backend),patch.object(bridge,'connect',side_effect=[Hanging(),new]),patch.dict(os.environ,{'SARVAM_API_KEY':'synthetic-test-only'}):
+            jobs=[asyncio.create_task(bridge.voice(first))]
+            try:
+                await asyncio.wait_for(ready.wait(),2)
+                jobs.append(asyncio.create_task(bridge.voice(second)))
+                await asyncio.wait_for(second.ready.wait(),2)
+                await asyncio.wait_for(jobs[0],2)
+                self.assertFalse(first.messages)
+            finally:
+                new.release.set()
+                for job in jobs:job.cancel()
+                await asyncio.gather(*jobs,return_exceptions=True);bridge.active.clear()
