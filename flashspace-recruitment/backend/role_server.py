@@ -1,4 +1,4 @@
-"""Database-backed recruiter role administration with temporary recording MVP."""
+"""Database-backed recruiter role administration with integrated interview recording."""
 import json
 import re
 import threading
@@ -136,7 +136,5 @@ class RoleManagementApp(DurableInterviewApp):
 
 
 def create_app():
-    # Lazy import avoids circular module initialization. Keeps the same staging
-    # start command so the owner does not need another manual Render edit.
-    from .temporary_recordings import create_app as recording_app
+    from .integrated_recording import create_app as recording_app
     return recording_app()
