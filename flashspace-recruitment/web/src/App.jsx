@@ -9,7 +9,9 @@ import { api, LIVE, DEMO_ROLES, DEMO_APPLICANTS } from "./generated/api";
 import { Wave, Interview, Dialogs } from "./generated/components";
 import "./generated/styles.css";
 const icons={growth:TrendingUp,community:Users,engineering:Code2};
-function Brand(){return <div className="brand"><span className="brandmark"><Zap fill="currentColor" size={23}/></span><span>flashspace<span className="brand-sub">BY STIRRING MINDS</span></span></div>;}
+// Wordmark uses the site's heading face: h1-h4 and .brand share one Manrope
+// rule in generated/styles.css, so the logo tracks the headings by construction.
+function Brand(){return <div className="brand"><span className="brandmark"><Zap fill="currentColor" size={23}/></span><span>teamrecrut<span className="brand-sub">BY STIRRING MINDS</span></span></div>;}
 export default function App(){
  const [page,setPage]=useState("roles"),[roles,setRoles]=useState(LIVE?[]:DEMO_ROLES),[user,setUser]=useState(null),[applications,setApplications]=useState([]),[adminApps,setAdminApps]=useState(LIVE?[]:DEMO_APPLICANTS);
  const [auth,setAuth]=useState(false),[register,setRegister]=useState(false),[selected,setSelected]=useState(null),[applyRole,setApplyRole]=useState(null),[active,setActive]=useState(null),[report,setReport]=useState(null),[practice,setPractice]=useState(false),[pendingRole,setPendingRole]=useState(null);
