@@ -10,6 +10,7 @@ export class InterviewCapture {
   if(!consent)throw Error('Camera and audio recording consent is required.');
   if(!['idle','failed','saved','cancelled'].includes(this.state))throw Error('Recording is already active.');
   this.recorder=null;this.id=null;this.finished=null;this.stopPromise=null;this.failed=false;this.blob=null;
+  this.voiceMeter=null;this.questionMeter=null;
   const generation=++this.generation;this.notify('permission');let stream;
   try{
    stream=await this.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},frameRate:{ideal:15,max:20}},audio:{echoCancellation:true,noiseSuppression:true,channelCount:1}});
@@ -20,6 +21,8 @@ export class InterviewCapture {
    await this.context.resume();this.assertCurrent(generation);
    this.mix=this.context.createMediaStreamDestination();
    this.microphone=this.context.createMediaStreamSource(new this.Stream(stream.getAudioTracks()));this.microphone.connect(this.mix);
+   this.voiceMeter=this.meter();this.questionMeter=this.meter();
+   if(this.voiceMeter)this.microphone.connect(this.voiceMeter);
    const mime=['video/webm;codecs=vp8,opus','video/webm','video/mp4'].find(t=>this.Recorder.isTypeSupported(t));
    if(!mime)throw Error('No compatible recording format.');
    this.mime=mime;
@@ -59,9 +62,20 @@ export class InterviewCapture {
    }
   }).catch(()=>this.fail('Recording upload failed. Keep the local copy; interview paused.')).finally(()=>{this.queuedBytes-=blob.size;});
  }
+ // Analyser taps are read-only branches: nothing downstream is connected, so
+ // the recording mix and the speaker output are byte-for-byte unaffected. A
+ // context without createAnalyser (test doubles) simply gets no meter.
+ meter(){
+  const analyser=this.context?.createAnalyser?.();
+  if(!analyser)return null;
+  analyser.fftSize=256;analyser.smoothingTimeConstant=.65;analyser.minDecibels=-85;analyser.maxDecibels=-20;
+  return analyser;
+ }
+ meterFor(kind){return kind==='question'?this.questionMeter:this.voiceMeter;}
  routeQuestion(audio){
   if(!this.context||!this.mix||this.state!=='recording')throw Error('Recording is not ready for question playback.');
   const source=this.context.createMediaElementSource(audio);source.connect(this.mix);source.connect(this.context.destination);this.sources.add(source);
+  if(this.questionMeter)source.connect(this.questionMeter);
   return ()=>{try{source.disconnect();}catch{}this.sources.delete(source);};
  }
  pause(){
@@ -93,6 +107,8 @@ export class InterviewCapture {
   clearInterval(this.timer);this.stream?.getTracks().forEach(t=>{t.onended=null;t.stop();});
   for(const source of this.sources){try{source.disconnect();}catch{}}this.sources.clear();
   try{this.microphone?.disconnect();}catch{}
+  for(const meter of [this.voiceMeter,this.questionMeter]){try{meter?.disconnect();}catch{}}
+  this.voiceMeter=null;this.questionMeter=null;
   if(this.context&&this.context.state!=='closed')await this.context.close();
  }
 }

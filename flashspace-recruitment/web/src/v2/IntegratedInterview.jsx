@@ -4,6 +4,8 @@ import React,{useEffect,useRef,useState} from 'react';
 import {TurnController} from './turn-controller.mjs';
 import {InterviewCapture} from './interview-capture.mjs';
 import {DraftClient} from './draft-client.mjs';
+import SpokenQuestion,{wordsOf,revealedAt} from './spoken-question.jsx';
+import VoiceVisualizer from './voice-visualizer.jsx';
 import '../RoleManager.css';
 import './integrated-interview.css';
 async function api(path,body,raw=false){
@@ -12,7 +14,7 @@ async function api(path,body,raw=false){
 }
 export default function IntegratedInterview(){
  const [user,setUser]=useState(undefined),[roles,setRoles]=useState([]),[apps,setApps]=useState([]),[flow,setFlow]=useState(null),[role,setRole]=useState(new URLSearchParams(location.search).get('role')||''),[experience,setExperience]=useState(''),[banks,setBanks]=useState(null);
- const [consent,setConsent]=useState(false),[status,setStatus]=useState('paused'),[error,setError]=useState(''),[text,setText]=useState(''),[captureState,setCaptureState]=useState('idle'),[busy,setBusy]=useState(false),[playback,setPlayback]=useState(null),[downloads,setDownloads]=useState([]),[typing,setTyping]=useState(false),[draftStatus,setDraftStatus]=useState(''),[orphans,setOrphans]=useState([]);
+ const [consent,setConsent]=useState(false),[status,setStatus]=useState('paused'),[error,setError]=useState(''),[text,setText]=useState(''),[captureState,setCaptureState]=useState('idle'),[busy,setBusy]=useState(false),[playback,setPlayback]=useState(null),[downloads,setDownloads]=useState([]),[typing,setTyping]=useState(false),[draftStatus,setDraftStatus]=useState(''),[orphans,setOrphans]=useState([]),[revealed,setRevealed]=useState(null);
  const current=useRef(null),capture=useRef(null),video=useRef(null),speech=useRef(null),closing=useRef(Promise.resolve()),ctl=useRef(new TurnController()),epoch=useRef(0),paused=useRef(true),checking=useRef(false),saving=useRef(false),audio=useRef(null),timer=useRef(null),nextCheck=useRef(0),mounted=useRef(true),intro=useRef(false),segmentBase=useRef(1),drafts=useRef(new DraftClient(api)),draftOwner=useRef(null),continuation=useRef(null),urls=useRef([]),startGuard=useRef(false);
  useEffect(()=>{mounted.current=true;(async()=>{try{const u=await api('/me');if(!mounted.current)return;setUser(u);if(u){const [r,a]=await Promise.all([api('/v2/roles'),api('/applications')]);if(!mounted.current)return;setRoles(r);setApps(a);if(u.admin)setBanks(await api('/admin/v2-banks'));const aid=new URLSearchParams(location.search).get('application');if(aid)await load(aid);}}catch(e){if(mounted.current)setError(e.message);}})();
  const unload=e=>{if(['permission','recording','paused','uploading'].includes(capture.current?.state)){e.preventDefault();e.returnValue='Recording or upload active.';}};window.addEventListener('beforeunload',unload);
@@ -20,11 +22,11 @@ export default function IntegratedInterview(){
  useEffect(()=>{if(video.current)video.current.srcObject=capture.current?.stream||null;},[captureState,flow?.application_id]);
  useEffect(()=>{const f=current.current;if(!f?.active||draftOwner.current!==f.active.id||saving.current||continuation.current||text.length>6000)return;let cancelled=false;const t=setTimeout(async()=>{if(draftOwner.current!==f.active.id||saving.current)return;setDraftStatus('Saving draft…');try{const r=await drafts.current.save(f.application_id,f.active.id,text);if(!cancelled&&r)setDraftStatus('Draft saved; not yet submitted.');}catch(e){if(!cancelled){setDraftStatus('Draft not saved. Keep this tab open.');setError(e.message);}}},1000);return()=>{cancelled=true;clearTimeout(t);};},[text,flow?.active?.id]);
  function paint(){if(mounted.current){setStatus(ctl.current.state);setText(ctl.current.transcript());}}
- function stopAudio(){const a=audio.current;audio.current=null;if(a){a.player.onended=null;a.player.onerror=null;a.player.pause();a.disconnect();URL.revokeObjectURL(a.url);a.resolve(false);}}
+ function stopAudio(){const a=audio.current;audio.current=null;if(a){a.stopReveal?.();a.player.onended=null;a.player.onerror=null;a.player.pause();a.disconnect();URL.revokeObjectURL(a.url);a.resolve(false);}}
  function closeSpeech(){const s=speech.current;speech.current=null;if(!s)return closing.current;s.processor.port.onmessage=null;s.processor.disconnect();s.input.disconnect();s.silent.disconnect();s.socket.onmessage=null;s.socket.onerror=null;s.socket.onclose=null;s.cancel?.();closing.current=new Promise(resolve=>{if(s.socket.readyState===3)return resolve();const t=setTimeout(resolve,5500);s.socket.onclose=()=>{clearTimeout(t);resolve();};s.socket.close();});return closing.current;}
- function pause(message=''){paused.current=true;epoch.current++;ctl.current.pause();stopAudio();capture.current?.pause();closeSpeech();clearInterval(timer.current);if(mounted.current){setStatus('paused');if(message)setError(message);}}
+ function pause(message=''){paused.current=true;epoch.current++;ctl.current.pause();stopAudio();if(mounted.current)setRevealed(null);capture.current?.pause();closeSpeech();clearInterval(timer.current);if(mounted.current){setStatus('paused');if(message)setError(message);}}
  async function allowance(f=current.current){if(!f?.active){setPlayback(null);return null;}const p=await api('/v2/applications/'+f.application_id+'/playback');if(mounted.current&&current.current?.active?.id===p.question_id)setPlayback(p);return p;}
- async function restore(f){draftOwner.current=null;drafts.current.invalidate();ctl.current.begin();ctl.current.pause();continuation.current=null;if(f.active){const d=await drafts.current.load(f.application_id,f.active.id);if(d?.transcript)ctl.current.segments.set(0,d.transcript);draftOwner.current=f.active.id;setText(d?.transcript||'');setDraftStatus(d?.transcript?'Saved draft restored.':'');}else setText('');}
+ async function restore(f){draftOwner.current=null;drafts.current.invalidate();setRevealed(null);ctl.current.begin();ctl.current.pause();continuation.current=null;if(f.active){const d=await drafts.current.load(f.application_id,f.active.id);if(d?.transcript)ctl.current.segments.set(0,d.transcript);draftOwner.current=f.active.id;setText(d?.transcript||'');setDraftStatus(d?.transcript?'Saved draft restored.':'');}else setText('');}
  async function acceptFlow(f){current.current=f;setFlow(f);intro.current=f.answers.length>0;history.replaceState(null,'','/interview-v2?application='+encodeURIComponent(f.application_id));await restore(f);await allowance(f);const r=await api('/v2/applications/'+f.application_id+'/recordings');setOrphans(r.recordings.filter(x=>x.status==='uploading'));setStatus(f.status==='completed'?'answers-completed':'paused');}
  async function load(aid){if(startGuard.current||saving.current||['recording','uploading'].includes(capture.current?.state))return;setBusy(true);try{await acceptFlow(await api('/v2/applications/'+aid));}catch(e){setError(e.message);}finally{setBusy(false);}}
  async function apply(e){e.preventDefault();setBusy(true);try{await acceptFlow(await api('/v2/applications',{role_id:role,experience,consent:true,consent_version:'flashspace-sarvam-conversation-v2'}));}catch(e){setError(e.message);}finally{setBusy(false);}}
@@ -65,12 +67,33 @@ export default function IntegratedInterview(){
   });
   if(paused.current||run!==epoch.current)throw Error('Listening cancelled.');
  }
+ // Word reveal follows real playback position rather than a wall-clock timer,
+ // so a stall, a slow decode or a paused element keeps text and voice together.
+ // Whatever ends the audio, the full question is restored: an interrupted
+ // question the candidate cannot read would be worse than no reveal at all.
+ function trackReveal(player,text){
+  const total=wordsOf(text).length;
+  if(!total)return null;
+  let frame=0,last=-1;setRevealed(0);
+  const step=()=>{
+   const shown=revealedAt(player.currentTime,player.duration,total);
+   if(shown!==last){last=shown;setRevealed(shown);}
+   frame=requestAnimationFrame(step);
+  };
+  frame=requestAnimationFrame(step);
+  return()=>{cancelAnimationFrame(frame);if(mounted.current)setRevealed(null);};
+ }
  async function speak(introduction=false){
   const f=current.current,token=ctl.current.epoch,run=epoch.current;setStatus('processing');let blob;
+  // Hide the question for the whole fetch, not just for playback, or it sits
+  // fully written on screen while the audio is still being generated.
+  if(!introduction)setRevealed(0);
   try{blob=await api('/v2/applications/'+f.application_id+(introduction?'/intro':'/speech'),introduction?{}:{question_id:f.active.id},true);}finally{if(!introduction)await allowance();}
   if(paused.current||run!==epoch.current||!ctl.current.canPlay(token))return false;
-  return new Promise(resolve=>{const url=URL.createObjectURL(blob),player=new Audio(url);let disconnect;try{disconnect=capture.current.routeQuestion(player);}catch(e){URL.revokeObjectURL(url);pause(e.message);resolve(false);return;}audio.current={player,url,disconnect,resolve};setStatus('ai-speaking');
-   player.onended=()=>{disconnect();URL.revokeObjectURL(url);audio.current=null;if(run===epoch.current){if(!introduction)ctl.current.playbackEnded(token);paint();}resolve(true);};player.onerror=()=>{stopAudio();pause('Question playback failed. Replay allowance counts delivered audio; resume or use typing.');};player.play().catch(()=>{stopAudio();pause('Browser blocked playback. Resume with the interview controls.');});});
+  return new Promise(resolve=>{const url=URL.createObjectURL(blob),player=new Audio(url);let disconnect;try{disconnect=capture.current.routeQuestion(player);}catch(e){URL.revokeObjectURL(url);pause(e.message);resolve(false);return;}
+   const stopReveal=introduction?null:trackReveal(player,f.active?.text);
+   audio.current={player,url,disconnect,resolve,stopReveal};setStatus('ai-speaking');
+   player.onended=()=>{stopReveal?.();disconnect();URL.revokeObjectURL(url);audio.current=null;if(run===epoch.current){if(!introduction)ctl.current.playbackEnded(token);paint();}resolve(true);};player.onerror=()=>{stopAudio();pause('Question playback failed. Replay allowance counts delivered audio; resume or use typing.');};player.play().catch(()=>{stopAudio();pause('Browser blocked playback. Resume with the interview controls.');});});
  }
  function checks(){clearInterval(timer.current);timer.current=setInterval(()=>{if(!paused.current&&!checking.current&&!saving.current&&ctl.current.ready()&&Date.now()>=nextCheck.current)endCheck();},300);}
  function captureFactory(){return new InterviewCapture({api,upload:async(rid,index,chunk)=>{const controller=new AbortController(),t=setTimeout(()=>controller.abort(),30000);try{const r=await fetch('/api/recordings/'+rid+'/chunk/'+index,{signal:controller.signal,method:'POST',credentials:'same-origin',headers:{'X-Requested-With':'Flashspace','Content-Type':'application/octet-stream'},body:chunk});if(!r.ok)throw Error('Recording upload failed.');}finally{clearTimeout(t);}},onChange:v=>{if(!mounted.current)return;setCaptureState(v.state);if(v.blob){const url=URL.createObjectURL(v.blob);urls.current.push(url);setDownloads(rows=>rows.some(r=>r.id===v.id)?rows:[...rows,{id:v.id,url,complete:v.state==='saved',extension:v.mime?.includes('mp4')?'mp4':'webm'}]);}},onFailure:message=>pause(message)});}
@@ -86,7 +109,7 @@ export default function IntegratedInterview(){
    if(epoch.current!==startEpoch||paused.current){capture.current.pause();throw Error('Start cancelled.');}
    if(video.current)video.current.srcObject=capture.current.stream;await connectSpeech();const p=await allowance(f);
    if(!intro.current&&!prior){const ok=await speak(true);if(!ok){pause('Introduction paused. Resume to continue.');return;}intro.current=true;await closeSpeech();ctl.current.begin();await connectSpeech();}
-   checks();if(p.initial_available&&!prior)await speak();else{ctl.current.state='listening';paint();}
+   checks();if(p.initial_available&&!prior)await speak();else{setRevealed(null);ctl.current.state='listening';paint();}
   }catch(e){pause(e.message);}finally{startGuard.current=false;setBusy(false);}
  }
  async function endCheck(){
@@ -97,7 +120,7 @@ export default function IntegratedInterview(){
   continuation.current=null;current.current=next;setFlow(next);await closeSpeech();await restore(next);setText('');
   if(next.status==='completed'){paused.current=true;epoch.current++;stopAudio();clearInterval(timer.current);setStatus('uploading');const saved=await capture.current?.stop();ctl.current.complete();setStatus(saved?.complete?'completed':'answers-completed');return;}
   if(paused.current){setStatus('paused');await allowance(next);return;}
-  ctl.current.begin();draftOwner.current=next.active.id;await connectSpeech();await allowance(next);await speak();checks();
+  ctl.current.begin();draftOwner.current=next.active.id;setRevealed(0);await connectSpeech();await allowance(next);await speak();checks();
  }
  async function commitContinuation(token){
   const info=continuation.current,answer=ctl.current.transcript();if(!info||saving.current)return;saving.current=true;setBusy(true);
@@ -126,15 +149,21 @@ export default function IntegratedInterview(){
  async function leave(){pause();setBusy(true);try{await drafts.current.chain;await capture.current?.stop();setStatus('paused');}finally{setBusy(false);}}
  async function recover(rid){if(!confirm('Mark this old unfinished recording incomplete? Do this only after its other browser tab has stopped recording. Uploaded parts remain for review.'))return;try{await api('/recordings/'+rid+'/abort',{});const r=await api('/v2/applications/'+current.current.application_id+'/recordings');setOrphans(r.recordings.filter(x=>x.status==='uploading'));}catch(e){setError(e.message);}}
  async function mapBank(role_id,bank){setBusy(true);try{await api('/admin/v2-banks',{role_id,bank});setBanks(await api('/admin/v2-banks'));setRoles(await api('/v2/roles'));}catch(e){setError(e.message);}finally{setBusy(false);}}
+ const aiSpeaking=status==='ai-speaking';
+ const listening=['listening','candidate-speaking','end-pending'].includes(status);
+ const meterKind=aiSpeaking?'question':'voice';
  const label={'paused':'Ready / paused','ai-speaking':'Interviewer is speaking…','candidate-speaking':'Listening…','listening':'Your turn — speak now','end-pending':'Listening — take your time','processing':'Processing…','saving':'Saving your answer…','uploading':'Interview complete — finishing video upload…','completed':'Interview and recording saved','answers-completed':'Answers submitted — check recording status'}[status]||status;
  return <main className="role-admin interview-integrated"><header><a href="/">← Careers / recruiter workspace</a><p className="role-kicker">AI INTERVIEW · INTEGRATED CAMERA PILOT</p></header>{error&&<p role="alert" className="role-error">{error}</p>}
  {user===undefined?<p>Loading interview access…</p>:!user?<p>Log in on the careers website, then return to your interview.</p>:!flow?<section className="role-editor"><h1>Your next conversation.</h1><p>Six shared questions, then four domain questions. Your recording stays with this interview.</p><h2>Continue an interview</h2>{apps.map(a=><div key={a.id}>{a.role_title} · {a.status} {a.flow_version===2?<button onClick={()=>load(a.id)}>Resume interview</button>:<a href="/">Continue existing four-question application</a>}</div>)}
  <form onSubmit={apply}><h2>Apply and start a new interview</h2><label>Role<select required value={role} onChange={e=>setRole(e.target.value)}><option value="">Choose role</option>{roles.map(r=><option value={r.id} disabled={!r.bank} key={r.id}>{r.title}{!r.bank?' — domain bank required':''}</option>)}</select></label><label>Relevant experience<textarea required minLength={20} maxLength={4000} value={experience} onChange={e=>setExperience(e.target.value)}/></label><label className="interview-consent"><input required type="checkbox"/>I agree to Sarvam processing interview audio, finalized draft storage, saved answers for human review and ClickUp synchronization. Fictional staging test only.</label><button disabled={busy||!roles.find(r=>r.id===role)?.bank}>Create my interview</button></form>
  {banks&&<section><h2>Recruiter: domain question-bank mappings</h2><p>Choose deliberately for new roles. Existing interviews retain their selected bank.</p>{banks.roles.map(r=><label key={r.id}>{r.title}<select disabled={busy} value={r.bank||''} onChange={e=>mapBank(r.id,e.target.value)}><option value="" disabled>Choose approved bank</option>{banks.banks.map(b=><option key={b}>{b}</option>)}</select></label>)}</section>}</section>:<>
- <h1>{flow.active?.stage==='domain'?'Your role, in practice.':'Your experience, in your words.'}</h1><div className="interview-columns"><section className="role-editor"><p className="role-kicker">{flow.active?.stage||'Complete'} · {flow.answers.length} answers saved · 10 core questions + up to 4 clarifiers</p><h2 aria-live="polite">{label}</h2><h3>{flow.active?.text}</h3>
+ <h1>{flow.active?.stage==='domain'?'Your role, in practice.':'Your experience, in your words.'}</h1><div className="interview-columns"><section className="role-editor"><p className="role-kicker">{flow.active?.stage||'Complete'} · {flow.answers.length} answers saved · 10 core questions + up to 4 clarifiers</p><div className="interview-turn"><h2 className="interview-status" aria-live="polite">{label}</h2>
+ <VoiceVisualizer tone={aiSpeaking?'interviewer':'candidate'} active={aiSpeaking||listening} getMeter={()=>capture.current?.meterFor(meterKind)} label={aiSpeaking?'Interviewer':listening?'You':''}/></div>
+ <SpokenQuestion text={flow.active?.text} revealed={revealed}/>
  {flow.status!=='completed'&&<><label className="interview-consent"><input type="checkbox" checked={consent} disabled={['permission','recording','paused','uploading'].includes(captureState)} onChange={e=>setConsent(e.target.checked)}/>I consent to recording my camera, microphone and the interviewer’s audio for authorized human review. Temporary copies may be lost on redeploy. Fictional data only.</label>
  {orphans.map(r=><p key={r.id}>An earlier capture is unfinished. <button disabled={busy} onClick={()=>recover(r.id)}>Release old recording session</button></p>)}
- <div className="role-actions"><button disabled={busy||!consent||!paused.current||orphans.length>0} onClick={begin}>{captureState==='paused'?'Resume interview':'Begin interview'}</button><button className="role-secondary" disabled={busy||paused.current||!playback||playback.deliveries_remaining<=0||ctl.current.speaking||!!continuation.current} onClick={replay}>Hear again ({playback?.replays_remaining??2} left)</button><button className="role-secondary" onClick={()=>pause()}>Pause interview</button><button className="role-secondary" disabled={busy||paused.current||ctl.current.speaking||ctl.current.pending.size>0} onClick={()=>submit(ctl.current.transcript(),ctl.current.epoch)}>I'm finished answering</button><button className="role-secondary" disabled={busy} onClick={()=>{pause();setTyping(true);setText(ctl.current.transcript());}}>Use typing alternative</button><button className="role-secondary" disabled={busy||!paused.current} onClick={()=>load(flow.application_id)}>Reload saved state</button></div>
+ <div className="role-actions interview-actions"><button disabled={busy||!consent||!paused.current||orphans.length>0} onClick={begin}>{captureState==='paused'?'Resume interview':'Begin interview'}</button><button className="role-secondary" disabled={busy||paused.current||!playback||playback.deliveries_remaining<=0||ctl.current.speaking||!!continuation.current} onClick={replay}>Hear again ({playback?.replays_remaining??2} left)</button><button className="role-secondary" onClick={()=>pause()}>Pause interview</button><button className="role-secondary" disabled={busy||paused.current||ctl.current.speaking||ctl.current.pending.size>0} onClick={()=>submit(ctl.current.transcript(),ctl.current.epoch)}>I'm finished answering</button></div>
+ <div className="role-actions interview-actions-minor"><button className="role-secondary" disabled={busy} onClick={()=>{pause();setTyping(true);setText(ctl.current.transcript());}}>Use typing alternative</button><button className="role-secondary" disabled={busy||!paused.current} onClick={()=>load(flow.application_id)}>Reload saved state</button></div>
  {typing?<form onSubmit={e=>{e.preventDefault();submit(text);}}><label>Your answer<textarea required maxLength={6000} value={text} onChange={e=>{setText(e.target.value);ctl.current.segments=new Map(e.target.value?[[0,e.target.value]]:[]);}}/></label><button disabled={busy}>Save typed answer</button><p>Camera/microphone remain paused during typing. No recording is claimed for that part.</p></form>:<><p>Finalized speech transcript — submitted only after your turn ends.</p><p>{text||'Your answer appears here as you speak.'}</p></>}
  <p role="status">{draftStatus}</p></>}
  <details><summary>Saved questions and answers</summary>{flow.answers.map(a=><section key={a.event_id}><h3>{a.stage}: {a.question}</h3><p>{a.answer}</p></section>)}</details></section>

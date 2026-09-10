@@ -1,1 +1,60 @@
-.interview-integrated{max-width:1500px;margin:auto}.interview-columns{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(270px,1fr);gap:24px;align-items:start}.interview-selfview{position:sticky;top:20px}.interview-selfview video{width:100%;aspect-ratio:4/3;background:#241c38;border-radius:12px;object-fit:cover;transform:scaleX(-1)}.interview-consent{display:flex;align-items:flex-start;gap:12px;margin:20px 0;line-height:1.5}.interview-consent input{width:22px!important;flex-shrink:0}.interview-integrated h3{line-height:1.6}.interview-integrated details{margin-top:28px}.interview-integrated form>label:not(.interview-consent){display:block;margin:16px 0}.interview-integrated button{margin-right:6px}.interview-review video{width:100%;max-height:600px;background:#241c38}.interview-review article{padding:20px 0;border-bottom:1px solid #ddd}@media(max-width:760px){.interview-columns{display:flex;flex-direction:column-reverse}.interview-columns>*{width:100%}.interview-selfview{position:static}.interview-selfview video{max-height:220px;object-fit:contain}.interview-integrated{padding:20px}}
+.interview-integrated{max-width:1500px;margin:auto}
+.interview-columns{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(270px,1fr);gap:24px;align-items:start}
+.interview-selfview{position:sticky;top:20px}
+.interview-selfview video{width:100%;aspect-ratio:4/3;background:#241c38;border-radius:12px;object-fit:cover;transform:scaleX(-1)}
+.interview-consent{display:flex;align-items:flex-start;gap:12px;margin:20px 0;line-height:1.5}
+.interview-integrated h3{line-height:1.6}
+.interview-integrated details{margin-top:28px}
+.interview-integrated form>label:not(.interview-consent){display:block;margin:16px 0}
+.interview-review video{width:100%;max-height:600px;background:#241c38}
+.interview-review article{padding:20px 0;border-bottom:1px solid #ddd}
+
+/* The room's own title sits above a dense card; the global display size
+   pushed the question and controls below the fold on a laptop. */
+.interview-integrated>h1{font-size:clamp(26px,2.6vw,38px);margin:4px 0 20px}
+
+/* A checkbox inherited the full-width, 44px-tall text-input rule and rendered
+   as a tall grey slab beside its label. Size it as a control, not a field. */
+.interview-consent input[type=checkbox]{width:20px;height:20px;min-height:0;flex:none;margin:2px 0 0;padding:0;accent-color:#7044dd}
+
+/* Turn header: who is speaking, and the live level for that voice. */
+.interview-turn{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin:4px 0 14px}
+.interview-status{font-size:19px;margin:0;letter-spacing:-.01em}
+.voice-viz{display:flex;align-items:center;gap:10px;opacity:.45;transition:opacity .25s ease}
+.voice-viz.is-live{opacity:1}
+.voice-viz-bars{display:flex;align-items:center;gap:3px;height:34px}
+.voice-viz-bars span{display:block;width:4px;height:34px;border-radius:2px;background:#cfc4df;transform:scaleY(.1);transform-origin:center;will-change:transform}
+.voice-viz.is-live.voice-viz-interviewer .voice-viz-bars span{background:#7044dd}
+.voice-viz.is-live.voice-viz-candidate .voice-viz-bars span{background:#2f8f6b}
+.voice-viz-label{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#655875;min-width:76px}
+
+/* Question text revealed in step with the audio. Unspoken words keep their
+   space and only lose visibility, so the card never reflows mid-sentence. */
+.interview-question{font-size:clamp(20px,2vw,27px);line-height:1.5;margin:0 0 8px;letter-spacing:-.01em;min-height:1.5em}
+.interview-question .interview-word{transition:opacity .18s ease}
+.interview-question.is-revealing .interview-word{opacity:0}
+.interview-question.is-revealing .interview-word.is-spoken{opacity:1}
+@media(prefers-reduced-motion:reduce){.interview-question .interview-word{transition:none}}
+.interview-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* `.role-actions` already spaces with a flex gap; the extra per-button margin
+   made the two rows of controls line up inconsistently. */
+.interview-actions{margin-top:22px}
+.interview-actions-minor{margin-top:10px;padding-top:14px;border-top:1px solid #f0ebf7}
+.interview-integrated .role-actions{align-items:center}
+
+.interview-selfview h2{font-size:19px;margin:0 0 12px}
+.interview-selfview p{margin:10px 0;font-size:14px}
+.interview-selfview .role-error{font-size:13px;padding:12px;line-height:1.5}
+.interview-selfview a{display:inline-block;margin:4px 8px 4px 0}
+
+@media(max-width:760px){
+ .interview-columns{display:flex;flex-direction:column-reverse}
+ .interview-columns>*{width:100%}
+ .interview-selfview{position:static}
+ .interview-selfview video{max-height:220px;object-fit:contain}
+ .interview-integrated{padding:20px}
+ .interview-turn{gap:10px}
+ .voice-viz-bars{height:24px}
+ .voice-viz-bars span{height:24px}
+}
