@@ -1,4 +1,4 @@
-"""Opt-in database-backed role administration. No change to existing entry points."""
+"""Database-backed recruiter role administration with temporary recording MVP."""
 import json
 import re
 import threading
@@ -42,7 +42,6 @@ class RoleRepository:
             seeded = db.execute('SELECT value FROM settings WHERE key=?', ('managed-roles-seeded-v1',)).fetchone()
             if not seeded:
                 for seed in seeds:
-                    # Stable IDs preserve application snapshots and settings list:<id> mapping.
                     data = {k: seed[k] for k in (*FIELDS, 'skills')}
                     stamp = now()
                     db.execute('INSERT INTO managed_roles VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
@@ -61,7 +60,6 @@ class RoleRepository:
             return [self.decode(row) for row in db.execute('SELECT * FROM managed_roles ORDER BY created_at,id')]
 
     def create(self, body, actor):
-        # Caller cannot choose identity, publish on create, or supply audit fields.
         data = validate_role(body)
         identifier, stamp = 'role-' + uuid.uuid4().hex, now()
         with self.store.db() as db:
@@ -86,7 +84,6 @@ class RoleRepository:
                 state = body.get('state')
                 if state not in STATES:
                     raise APIError(400, 'Choose draft, published or closed.')
-                # Published roles always originate from fully validated saved data.
                 cursor = db.execute('UPDATE managed_roles SET state=?,version=version+1,updated_at=?,updated_by=? WHERE id=? AND version=? RETURNING id',
                                     (state, stamp, actor, identifier, version))
             else:
@@ -129,12 +126,9 @@ class RoleManagementApp(DurableInterviewApp):
                     return self.role_repository.create(body, user['id']), []
             raise APIError(405, 'Method not allowed.')
         if method == 'GET' and path == '/api/roles':
-            # Never return drafts, audit/version fields or closed roles publicly.
             return [{k: role[k] for k in ('id', *FIELDS, 'skills')}
                     for role in self.role_repository.all() if role['published']], []
         if method == 'POST' and path == '/api/applications':
-            # Serialize local close/apply; use latest database roles for each request.
-            # Existing applications continue against their immutable role_snapshot.
             with self.lock:
                 self.roles = self.role_repository.all()
                 return super().route(env, body)
@@ -142,5 +136,7 @@ class RoleManagementApp(DurableInterviewApp):
 
 
 def create_app():
-    from .sarvam_server import SarvamAI
-    return RoleManagementApp(ai=SarvamAI())
+    # Lazy import avoids circular module initialization. Keeps the same staging
+    # start command so the owner does not need another manual Render edit.
+    from .temporary_recordings import create_app as recording_app
+    return recording_app()
