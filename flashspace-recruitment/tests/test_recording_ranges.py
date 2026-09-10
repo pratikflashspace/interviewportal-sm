@@ -19,6 +19,6 @@ class RangeTests(RecordingTests):
         self.assertTrue(response['status'].startswith('416'))
     def test_existing_entrypoint_delegates_to_recording_app(self):
         from backend.role_server import create_app
-        with patch('backend.temporary_recordings.create_app',return_value='sentinel') as factory:
+        with patch('backend.integrated_recording.create_app',return_value='sentinel') as factory:
             self.assertEqual(create_app(),'sentinel')
         factory.assert_called_once()
