@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import json
+import logging
 import os
 import re
 import time
@@ -15,9 +16,9 @@ from websockets.asyncio.client import connect as WebSocketConnect
 from .v2_endpoint import create_app
 from .v2_speech_events import SpeechEvents
 
+LOG=logging.getLogger('flashspace.voice')
 class connect(WebSocketConnect):
-    def process_redirect(self, exc):
-        return exc
+    def process_redirect(self, exc):return exc
 
 UPSTREAM='wss://api.sarvam.ai/speech-to-text-realtime/ws'
 EVENTS={'vad.speech_start','vad.speech_end','transcript.partial','transcript.final'}
@@ -34,7 +35,12 @@ def clean_event(value):
     return result
 
 backend=None
-active=set()
+# Identity-bearing leases: late cleanup must never remove a newer connection.
+active={}
+
+def release_lease(aid,lease):
+    if active.get(aid) is lease:
+        del active[aid]
 
 async def startup():
     global backend
@@ -50,6 +56,7 @@ async def pcm_worklet(request):
 async def voice(socket):
     aid=socket.path_params['aid']
     if backend is None or socket.headers.get('origin')!=backend.origin or not re.fullmatch(r'[\w-]{1,80}',aid):
+        LOG.warning('voice_rejected reason=origin_or_configuration')
         await socket.close(code=1008);return
     env={'HTTP_COOKIE':socket.headers.get('cookie','')}
     async def authorized():
@@ -60,26 +67,29 @@ async def voice(socket):
         return await asyncio.to_thread(check)
     try:a=await authorized()
     except Exception:
+        LOG.warning('voice_rejected reason=session_or_ownership')
         await socket.close(code=1008);return
     if aid in active:
+        LOG.warning('voice_rejected reason=active_connection')
         await socket.close(code=1008);return
-    active.add(aid)
+    lease=object();active[aid]=lease;phase='quota';disconnected=False
     try:
         await asyncio.to_thread(backend.ai_quota,a,'voice-session-v2',24)
+        phase='configuration'
         key=os.getenv('SARVAM_API_KEY','').strip()
         if not key or any(c.isspace() for c in key):raise ValueError()
-        await socket.accept()
+        await socket.accept();phase='provider_connect'
         query=urlencode({'language_code':'en-IN','model':'saaras:v3-realtime','encoding':'linear16',
                          'sample_rate':16000,'stream_type':'balanced','endpointing':'vad',
                          'silence_duration_ms':1500,'min_speech_duration_ms':250})
         async with connect(UPSTREAM+'?'+query,additional_headers={'api-subscription-key':key},
                            open_timeout=15,close_timeout=5,max_size=65536,max_queue=8,ping_interval=20) as upstream:
-            await socket.send_json({'event':'ready'});started=time.monotonic();total=0
+            phase='stream';await socket.send_json({'event':'ready'});started=time.monotonic();total=0
             async def send_audio():
-                nonlocal total
+                nonlocal total,disconnected
                 while True:
                     msg=await socket.receive()
-                    if msg['type']=='websocket.disconnect':return
+                    if msg['type']=='websocket.disconnect':disconnected=True;return
                     frame=msg.get('bytes')
                     if frame is None or len(frame)==0 or len(frame)>6400 or len(frame)%2:raise ValueError()
                     total+=len(frame);elapsed=time.monotonic()-started
@@ -106,11 +116,21 @@ async def voice(socket):
             finally:
                 for task in tasks:task.cancel()
                 await asyncio.gather(*tasks,return_exceptions=True)
+                # No forwarding/auth tasks remain. Free the application lease
+                # BEFORE __aexit__ waits for the provider's close handshake.
+                # Browser close/reconnect can now proceed without a spurious 403.
+                release_lease(aid,lease)
+                LOG.info('voice_stream_stopped forwarding_tasks=0')
+                phase='provider_close'
     except Exception:
-        try:await socket.send_json({'event':'error','message':'Voice connection unavailable. Pause and reconnect or use typing.'})
-        except Exception:pass
+        # Only allowlisted phases are logged; no keys, URLs, candidate IDs,
+        # transcripts or raw upstream exceptions.
+        LOG.warning('voice_failed phase=%s',phase)
+        if not disconnected:
+            try:await socket.send_json({'event':'error','message':'Voice connection unavailable. Pause and reconnect or use typing.'})
+            except Exception:pass
     finally:
-        active.discard(aid)
+        release_lease(aid,lease)
         try:await socket.close(code=1000)
         except Exception:pass
 
