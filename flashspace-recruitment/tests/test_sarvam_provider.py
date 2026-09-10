@@ -55,8 +55,10 @@ class SarvamTests(unittest.TestCase):
         return patch.object(self.p.opener, 'open', return_value=Response(value))
 
     def test_missing_or_unsafe_key(self):
+        # The OS rejects embedded NUL before the adapter runs. Mock lookup so
+        # this tests adapter validation rather than os.environ assignment.
         for token in ('', 'Bearer abc', 'a\nb', '\"abc\"', "'abc'", 'a\x00b', 'é'):
-            with self.subTest(token=repr(token)), patch.dict(os.environ, {'SARVAM_API_KEY': token}):
+            with self.subTest(token=repr(token)), patch('backend.sarvam_provider.os.getenv', return_value=token):
                 with self.assertRaises(APIError): SarvamProvider(APIError)
 
     def test_endpoint_guard_and_redirect(self):
