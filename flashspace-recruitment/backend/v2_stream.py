@@ -11,17 +11,20 @@ from starlette.applications import Starlette
 from starlette.middleware.wsgi import WSGIMiddleware
 from starlette.responses import Response
 from starlette.routing import Mount, Route, WebSocketRoute
-from websockets.asyncio.client import connect
+from websockets.asyncio.client import connect as WebSocketConnect
 from .v2_endpoint import create_app
+
+class connect(WebSocketConnect):
+    def process_redirect(self, exc):
+        # Never forward subscription credentials to a redirect destination.
+        return exc
 
 UPSTREAM='wss://api.sarvam.ai/speech-to-text-realtime/ws'
 EVENTS={'vad.speech_start','vad.speech_end','transcript.partial','transcript.final'}
 
-
 def clean_event(value):
     if not isinstance(value,dict) or value.get('event') not in EVENTS:return None
-    result={'event':value['event']}
-    index=value.get('utterance_idx')
+    result={'event':value['event']};index=value.get('utterance_idx')
     if type(index) is not int or index<0:return None
     result['utterance_idx']=index
     if value['event'].startswith('transcript.'):
@@ -71,8 +74,7 @@ async def voice(socket):
                          'silence_duration_ms':1500,'min_speech_duration_ms':250})
         async with connect(UPSTREAM+'?'+query,additional_headers={'api-subscription-key':key},
                            open_timeout=15,close_timeout=5,max_size=65536,max_queue=8,ping_interval=20) as upstream:
-            await socket.send_json({'event':'ready'})
-            started=time.monotonic();total=0
+            await socket.send_json({'event':'ready'});started=time.monotonic();total=0
             async def send_audio():
                 nonlocal total
                 while True:
