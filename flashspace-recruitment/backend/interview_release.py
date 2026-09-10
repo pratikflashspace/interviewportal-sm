@@ -4,8 +4,9 @@ import re
 from .server import APIError, now
 from .integrated_recordings import IntegratedApp
 from .v2_endpoint import EvidenceOnlyAI
+from .v2_usage import V2UsagePolicy
 
-class InterviewRelease(IntegratedApp):
+class InterviewRelease(V2UsagePolicy, IntegratedApp):
     def route(self,env,body):
         path=env.get('PATH_INFO','');method=env.get('REQUEST_METHOD')
         match=re.fullmatch(r'/api/recordings/([a-f0-9]{32})/abort',path)
