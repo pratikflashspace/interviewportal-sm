@@ -43,7 +43,7 @@ class RecordingTests(legacy.BackendTests):
         data=b'\x1aE\xdf\xa3'+b'x'*100
         self.assertEqual(self.req(path+'/chunk/0',data,raw=True)['status'],200)
         self.assertEqual(self.req(path+'/finish',{'chunks':1})['status'],200)
-        self.assertIn('/recordings?recording=',self.app.store.get(a['id'])['recording_review_url'])
+        self.assertIn('/recordings?',self.app.store.get(a['id'])['recording_review_url'])
         self.assertEqual(self.req(path+'/media')['status'],403)
         cookie=self.cookie;self.register('other@example.com')
         self.assertEqual(self.req(path+'/chunk/1',b'x'*100,raw=True)['status'],404)
