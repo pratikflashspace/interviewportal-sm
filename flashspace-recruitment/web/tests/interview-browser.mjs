@@ -12,7 +12,7 @@ await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.
 const browser=await chromium.launch({headless:true,args:['--no-sandbox','--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream','--autoplay-policy=no-user-gesture-required']});
 const page=await browser.newPage({viewport:{width:1280,height:900},permissions:['camera','microphone']});
 const errors=[];page.on('pageerror',e=>errors.push(e.message));let answers=[],chunks=0,finished=false,submitted=false;const requests=[];
-function wav(){const n=1600,b=Buffer.alloc(44+n*2);b.write('RIFF');b.writeUInt32LE(b.length-8,4);b.write('WAVE',8);b.write('fmt ',12);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);b.writeUInt32LE(16000,24);b.writeUInt32LE(32000,28);b.writeUInt16LE(2,32);b.writeUInt16LE(16,34);b.write('data',36);b.writeUInt32LE(n*2,40);return b;}
+function wav(){const n=16000,b=Buffer.alloc(44+n*2);b.write('RIFF');b.writeUInt32LE(b.length-8,4);b.write('WAVE',8);b.write('fmt ',12);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);b.writeUInt32LE(16000,24);b.writeUInt32LE(32000,28);b.writeUInt16LE(2,32);b.writeUInt16LE(16,34);b.write('data',36);b.writeUInt32LE(n*2,40);return b;}
 await page.route('**/api/**',async route=>{const req=route.request(),p=new URL(req.url()).pathname;requests.push(p);let value={};
  if(p==='/api/recordings'){const data=req.postDataJSON();assert.equal(data.application_id,'test-app');assert.equal(data.consent,'temporary-av-v1');value={id:'a'.repeat(32)};}
  else if(p.includes('/chunk/')){chunks++;value={chunks};}
@@ -31,6 +31,7 @@ try{
  await page.goto(origin);assert.equal(await page.locator('.recording-dock').count(),0);assert.equal(requests.length,0);
  await page.getByRole('checkbox').check();await page.getByRole('button',{name:'Begin / resume interview',exact:true}).click();await listening();
  const active=await page.locator('video').evaluate(v=>v.srcObject?.getVideoTracks()[0]?.readyState);assert.equal(active,'live');
+ await page.waitForFunction(()=>document.querySelector('video')?.currentTime>1,{},{timeout:15000});
  for(let i=0;i<4;i++){
   await listening();await page.locator('#interview-answer').fill('I completed a fictional project and measured its outcomes.');
   await page.getByRole('button',{name:'I’m finished answering'}).click();if(i<3)await page.getByText(`${i+1}/4 answers saved`,{exact:true}).waitFor();
