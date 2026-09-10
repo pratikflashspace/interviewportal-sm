@@ -12,10 +12,10 @@ const consent='flashspace-sarvam-conversation-v2';
 export default function Conversation(){
  const [me,setMe]=useState(null),[roles,setRoles]=useState([]),[apps,setApps]=useState([]),[flow,setFlow]=useState(null);
  const [status,setStatus]=useState('paused'),[error,setError]=useState(''),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[typing,setTyping]=useState(false),[bankData,setBankData]=useState(null),[reports,setReports]=useState([]),[allowance,setAllowance]=useState(null),[draftStatus,setDraftStatus]=useState('');
- const live=useRef(null),media=useRef(null),sound=useRef(null),ctl=useRef(new TurnController()),generation=useRef(0),checking=useRef(false),request=useRef(null),paused=useRef(true),timer=useRef(null),retryAfter=useRef(0),introDone=useRef(false),closing=useRef(Promise.resolve()),preserved=useRef(null),draftClient=useRef(new DraftClient(api));
+ const live=useRef(null),media=useRef(null),sound=useRef(null),ctl=useRef(new TurnController()),generation=useRef(0),checking=useRef(false),request=useRef(null),paused=useRef(true),timer=useRef(null),retryAfter=useRef(0),introDone=useRef(false),closing=useRef(Promise.resolve()),preserved=useRef(null),draftClient=useRef(new DraftClient(api)),draftOwner=useRef(null);
  useEffect(()=>{(async()=>{try{const u=await api('/me');setMe(u);if(u){setRoles(await api('/v2/roles'));setApps(await api('/applications'));if(u.admin){setBankData(await api('/admin/v2-banks'));setReports(await api('/admin/applications'));}}}catch(e){setError(e.message);}})();return()=>{halt();draftClient.current.invalidate();};},[]);
  useEffect(()=>{
-  const f=flow;if(!f?.active||request.current||draft.length>6000)return;
+  const f=flow;if(!f?.active||request.current||draft.length>6000||draftOwner.current?.question!==f.active.id)return;
   let cancelled=false;const timeout=setTimeout(async()=>{
    if(!draftClient.current.current||draftClient.current.current.question!==f.active.id)return;
    setDraftStatus('Saving draft…');
@@ -27,16 +27,17 @@ export default function Conversation(){
  function paint(){setStatus(ctl.current.state);setDraft(ctl.current.transcript());}
  function stopAudio(){if(sound.current){const s=sound.current;sound.current=null;s.audio.onended=null;s.audio.onerror=null;s.audio.pause();URL.revokeObjectURL(s.url);s.resolve(false);}}
  function closeMedia(){const m=media.current;media.current=null;if(!m)return closing.current;m.socket.onmessage=null;m.socket.onerror=null;m.socket.onclose=null;m.node.port.onmessage=null;m.stream.getTracks().forEach(t=>t.stop());m.node.disconnect();m.context.close();closing.current=new Promise(resolve=>{if(m.socket.readyState===3){resolve();return;}const limit=setTimeout(resolve,5500);m.socket.onclose=()=>{clearTimeout(limit);resolve();};m.socket.close();});return closing.current;}
- function keepDraft(){const f=live.current;if(f?.active&&ctl.current.segments.size)preserved.current={application:f.application_id,question:f.active.id,segments:[...ctl.current.segments.entries()]};}
+ function keepDraft(){const owner=draftOwner.current;if(owner&&ctl.current.segments.size)preserved.current={...owner,segments:[...ctl.current.segments.entries()]};}
  function halt(){keepDraft();paused.current=true;generation.current++;ctl.current.pause();stopAudio();closeMedia();clearInterval(timer.current);setStatus('paused');}
  async function playbackState(f=live.current){if(!f?.active){setAllowance(null);return null;}const s=await api('/v2/applications/'+f.application_id+'/playback');if(live.current?.active?.id===s.question_id)setAllowance(s);return s;}
  async function restoreDraft(f){
-  draftClient.current.invalidate();if(!f.active){setDraft('');return;}
+  draftClient.current.invalidate();draftOwner.current=null;if(!f.active){setDraft('');return;}
   const result=await draftClient.current.load(f.application_id,f.active.id);if(!result)return;
   const local=preserved.current;
   const text=local?.application===f.application_id&&local.question===f.active.id?local.segments.map(x=>x[1]).join(' '):result.transcript;
   ctl.current.begin();ctl.current.pause();if(text)ctl.current.segments.set(0,text);
-  preserved.current=text?{application:f.application_id,question:f.active.id,segments:[[0,text]]}:null;
+  draftOwner.current={application:f.application_id,question:f.active.id};
+  preserved.current=text?{...draftOwner.current,segments:[[0,text]]}:null;
   setDraft(text);setDraftStatus(text===result.transcript?'Draft restored. Finalized draft text is separate from submitted answers.':'Local draft restored; waiting to save.');
  }
  async function load(aid){halt();setError('');setBusy(true);try{const f=await api('/v2/applications/'+aid);live.current=f;setFlow(f);introDone.current=f.answers.length>0;await restoreDraft(f);await playbackState(f);}catch(e){setError(e.message);}finally{setBusy(false);}}
@@ -75,7 +76,7 @@ export default function Conversation(){
   if(typing&&live.current?.active)preserved.current={application:live.current.application_id,question:live.current.active.id,segments:draft?[[0,draft]]:[]};
   halt();setError('');setBusy(true);setTyping(false);
   try{const f=await api('/v2/applications/'+live.current.application_id);live.current=f;setFlow(f);if(f.status==='completed'){setStatus('completed');return;}if(!f.active)throw new Error('The next question is still being prepared. Reload shortly.');
-   const s=await playbackState(f),saved=preserved.current;ctl.current.begin();if(saved?.application===f.application_id&&saved.question===f.active.id)ctl.current.segments=new Map(saved.segments);paused.current=false;generation.current++;await openMic();
+   const s=await playbackState(f),saved=preserved.current;ctl.current.begin();draftOwner.current={application:f.application_id,question:f.active.id};if(saved?.application===f.application_id&&saved.question===f.active.id)ctl.current.segments=new Map(saved.segments);paused.current=false;generation.current++;await openMic();
    if(!introDone.current&&!ctl.current.segments.size){const finished=await speak(null,true);if(!finished){halt();setError('Introduction interrupted. Reconnect when ready; no answer was submitted.');return;}introDone.current=true;await closeMedia();ctl.current.begin();await openMic();}
    startChecks();if(s.initial_available&&!ctl.current.segments.size)await speak(f.active.id);else{ctl.current.state='listening';paint();}
   }catch(e){halt();setError(e.message);}finally{setBusy(false);}
@@ -89,9 +90,9 @@ export default function Conversation(){
  async function submit(text,token=null){
   if(request.current||!text.trim()||text.length>6000)return;const f=live.current,gen=generation.current;request.current=crypto.randomUUID();setBusy(true);setStatus('saving');
   try{await draftClient.current.chain;const next=await api('/v2/applications/'+f.application_id+'/answer',{event_id:request.current,version:f.version,question_id:f.active.id,answer:text});live.current=next;setFlow(next);request.current=null;draftClient.current.invalidate();await playbackState(next);
-   if(next.status==='completed'){halt();preserved.current=null;ctl.current.complete();setStatus('completed');setDraft('');setDraftStatus('All answers submitted.');return;}
-   if(paused.current||gen!==generation.current||(token!==null&&!ctl.current.canPlay(token)))return;
-   preserved.current=null;await closeMedia();ctl.current.begin();setDraft('');await draftClient.current.load(next.application_id,next.active.id);setDraftStatus('');await openMic();await speak(next.active.id);
+   if(next.status==='completed'){halt();preserved.current=null;draftOwner.current=null;ctl.current.complete();setStatus('completed');setDraft('');setDraftStatus('All answers submitted.');return;}
+   if(paused.current||gen!==generation.current||(token!==null&&!ctl.current.canPlay(token))){if(token===null&&typing){preserved.current=null;await restoreDraft(next);setStatus('paused');}return;}
+   preserved.current=null;await closeMedia();ctl.current.begin();draftOwner.current={application:next.application_id,question:next.active.id};setDraft('');await draftClient.current.load(next.application_id,next.active.id);setDraftStatus('');await openMic();await speak(next.active.id);
   }catch(e){halt();setError(e.message+' Reload saved state before retrying an ambiguous submission.');}finally{request.current=null;setBusy(false);}
  }
  async function finishExplicit(){const text=ctl.current.transcript();if(!text.trim()||ctl.current.speaking||ctl.current.pending.size){setError('Wait for speech and transcription to finish.');return;}await submit(text,ctl.current.epoch);}
