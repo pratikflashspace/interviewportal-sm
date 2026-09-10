@@ -1,5 +1,4 @@
-// CI-only real browser with synthetic webcam/mic and mocked business APIs.
-// No Sarvam, real candidates, external uploads or server credentials used.
+// CI-only real browser, synthetic devices and mocked APIs; no live secrets.
 import {execFileSync} from 'node:child_process';
 import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';import http from 'node:http';import assert from 'node:assert/strict';
 if(process.env.GITHUB_ACTIONS!=='true'){console.log('Browser acceptance runs in GitHub Actions; skipped on runtime/Render build.');process.exit(0);}
@@ -28,7 +27,7 @@ await page.route('**/api/**',async route=>{const req=route.request(),p=new URL(r
  return route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
 });
 try{
- await page.goto(origin);assert.equal(await page.locator('.recording-dock').count(),0);assert.equal(requests.length,0,'no camera reservation before Begin');
+ await page.goto(origin);assert.equal(await page.locator('.recording-dock').count(),0);assert.equal(requests.length,0);
  await page.getByRole('checkbox').check();await page.getByRole('button',{name:'Begin / resume interview',exact:true}).click();
  await page.getByRole('heading',{name:'Listening — take your time',exact:true}).waitFor({timeout:20000});
  const active=await page.locator('video').evaluate(v=>v.srcObject?.getVideoTracks()[0]?.readyState);assert.equal(active,'live');
@@ -38,8 +37,9 @@ try{
   await page.getByRole('button',{name:'I’m finished answering'}).click();
   if(i<3)await page.getByText(`${i+1}/4 answers saved`,{exact:true}).waitFor();
  }
- await page.getByRole('heading',{name:'Interview completed',exact:true}).waitFor({timeout:20000});assert.ok(submitted);assert.ok(finished);assert.equal(requests.filter(x=>x==='/api/recordings').length,1,'one capture for entire interview');
- console.log('PASS application-bound Begin -> camera + mixed audio -> four turns -> upload finalization -> submission; no floating recorder');
+ await page.getByRole('heading',{name:'Interview completed',exact:true}).waitFor({timeout:20000});assert.ok(submitted);assert.ok(finished);assert.equal(requests.filter(x=>x==='/api/recordings').length,1);
+ console.log('PASS application-bound Begin, camera/mixed audio, four turns, upload finalization, submission; no floating recorder');
  await page.goto(origin+'/review');await page.getByRole('heading',{name:'Interview recording'}).waitFor();await page.getByText('Segment 1 · ready').waitFor();assert.equal(await page.locator('video[controls]').count(),1);console.log('PASS application-specific recruiter recording panel');
- await page.setViewportSize({width:390,height:844});await page.goto(origin);await page.getByRole('heading',{name:'Ready when you are'}).waitFor();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);console.log('PASS narrow-screen layout without horizontal overflow');assert.deepEqual(errors,[]);
-}finally{await browser.close();await new Promise(r=>server.close(r));await fs.rm(temp,{recursive:true,force:true});}
+ await page.setViewportSize({width:390,height:844});await page.goto(origin);await page.getByRole('heading',{name:'Ready when you are'}).waitFor();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);console.log('PASS narrow-screen layout');assert.deepEqual(errors,[]);
+}catch(e){e.message+=' | SYNTHETIC UI: '+(await page.locator('body').innerText()).slice(0,4000)+' | requests: '+JSON.stringify(requests.slice(-20))+' | page errors: '+JSON.stringify(errors);throw e;}
+finally{await browser.close();await new Promise(r=>server.close(r));await fs.rm(temp,{recursive:true,force:true});}
