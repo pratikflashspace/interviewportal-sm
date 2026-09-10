@@ -1,7 +1,7 @@
 {
-  "name":"flashspace-careers-web","version":"1.0.0","private":true,"type":"module",
-  "scripts":{"build":"node build.mjs"},
-  "dependencies":{"react":"18.2.0","react-dom":"18.2.0","lucide-react":"0.577.0","radix-ui":"1.4.2","class-variance-authority":"0.7.1","clsx":"2.1.1","tailwind-merge":"2.6.0","sonner":"1.7.4","next-themes":"0.4.6"},
-  "devDependencies":{"esbuild":"0.27.2","tailwindcss":"3.4.18","postcss":"8.5.23","tailwindcss-animate":"1.0.7"},
-  "engines":{"node":">=20"}
+ "name":"flashspace-careers-web","version":"1.0.0","private":true,"type":"module",
+ "scripts":{"build":"node build.mjs && node tests/interview-browser.mjs"},
+ "dependencies":{"react":"18.2.0","react-dom":"18.2.0","lucide-react":"0.577.0","radix-ui":"1.4.2","class-variance-authority":"0.7.1","clsx":"2.1.1","tailwind-merge":"2.6.0","sonner":"1.7.4","next-themes":"0.4.6"},
+ "devDependencies":{"esbuild":"0.27.2","tailwindcss":"3.4.18","postcss":"8.5.23","tailwindcss-animate":"1.0.7","playwright":"1.58.2"},
+ "engines":{"node":">=20"}
 }
