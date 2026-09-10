@@ -13,10 +13,10 @@ from starlette.responses import Response
 from starlette.routing import Mount, Route, WebSocketRoute
 from websockets.asyncio.client import connect as WebSocketConnect
 from .v2_endpoint import create_app
+from .v2_speech_events import SpeechEvents
 
 class connect(WebSocketConnect):
     def process_redirect(self, exc):
-        # Never forward subscription credentials to a redirect destination.
         return exc
 
 UPSTREAM='wss://api.sarvam.ai/speech-to-text-realtime/ws'
@@ -86,11 +86,14 @@ async def voice(socket):
                     if total>32000*(elapsed+2) or total>32000*1800:raise ValueError()
                     await upstream.send(json.dumps({'event':'audio_input','audio':base64.b64encode(frame).decode()}))
             async def receive_events():
+                guard=SpeechEvents()
                 async for message in upstream:
                     value=json.loads(message)
                     if value.get('event')=='error':raise ValueError()
                     cleaned=clean_event(value)
-                    if cleaned:await socket.send_json(cleaned)
+                    if cleaned:
+                        forwarded=guard.accept(cleaned)
+                        if forwarded:await socket.send_json(forwarded)
             async def auth_watch():
                 while True:
                     await asyncio.sleep(15);await authorized()
