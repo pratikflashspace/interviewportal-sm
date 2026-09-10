@@ -42,11 +42,14 @@ export class InterviewMedia {
   this.finishing=(async()=>{
    this.closed=true;this.generation++;clearTimeout(this.limit);this.stopPlayback();
    if(this.recorder?.state==='recording')this.recorder.stop();
-   this.stream?.getTracks().forEach(t=>t.stop());if(this.done)await this.done;await this.chain;
+   // Allow the encoder to flush while its source tracks are still live. Release
+   // tracks after stop, with a bounded fallback if a broken browser never emits it.
+   if(this.done){let timeout;await Promise.race([this.done,new Promise(resolve=>timeout=setTimeout(()=>{this.failed=true;resolve();},5000))]);clearTimeout(timeout);}
+   this.stream?.getTracks().forEach(t=>t.stop());this.mix?.stream.getTracks().forEach(t=>t.stop());await this.chain;
    const blob=new Blob(this.parts,{type:this.mime||'video/webm'});
    let error=null;try{if(this.failed||!this.index)throw Error('Server recording is incomplete. Keep the local download.');await this.call('/recordings/'+this.slot.id+'/finish',{chunks:this.index});}catch(e){error=e.message;}
    this.dispose();return {blob,error,recording:this.slot?.id};
   })();return this.finishing;
  }
- dispose(){this.closed=true;this.generation++;clearTimeout(this.limit);this.stopPlayback();if(this.recorder?.state==='recording')this.recorder.stop();this.stream?.getTracks().forEach(t=>t.stop());if(this.context&&this.context.state!=='closed')this.context.close();}
+ dispose(){this.closed=true;this.generation++;clearTimeout(this.limit);this.stopPlayback();if(this.recorder?.state==='recording')this.recorder.stop();this.stream?.getTracks().forEach(t=>t.stop());this.mix?.stream.getTracks().forEach(t=>t.stop());if(this.context&&this.context.state!=='closed')this.context.close();}
 }
