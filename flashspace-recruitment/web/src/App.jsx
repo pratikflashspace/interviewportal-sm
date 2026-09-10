@@ -9,9 +9,22 @@ import { api, LIVE, DEMO_ROLES, DEMO_APPLICANTS } from "./generated/api";
 import { Wave, Interview, Dialogs } from "./generated/components";
 import "./generated/styles.css";
 const icons={growth:TrendingUp,community:Users,engineering:Code2};
-// Wordmark uses the site's heading face: h1-h4 and .brand share one Manrope
-// rule in generated/styles.css, so the logo tracks the headings by construction.
-function Brand(){return <div className="brand"><span className="brandmark"><Zap fill="currentColor" size={23}/></span><span>teamrecrut<span className="brand-sub">BY STIRRING MINDS</span></span></div>;}
+// Mark: four voices, and one that stands out of them. The outer bars are a
+// spoken waveform - this product's premise is that a candidate is heard rather
+// than read, and the hero animates the same motif - while the lime figure is
+// the standout among them, which is what recruiting actually is. It degrades
+// honestly: below ~24px the head and body merge into a single accent bar
+// rather than turning to mush. Counter-skewed so the figure stands upright
+// inside the tile's lean.
+const MARK_BARS=[[1.6,7.6],[5.8,12],[15.8,13],[20,7.2]];
+function Brandmark(){
+ return <svg className="brandmark-wave" width="23" height="23" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+  {MARK_BARS.map(([x,h])=><rect key={x} x={x} y={(24-h)/2} width="2.6" height={h} rx="1.3" fill="currentColor"/>)}
+  <circle className="mark-accent" cx="12" cy="4.5" r="2.6" fill="currentColor"/>
+  <rect className="mark-accent" x="10.4" y="8.9" width="3.2" height="11.6" rx="1.6" fill="currentColor"/>
+ </svg>;
+}
+function Brand(){return <div className="brand"><span className="brandmark"><Brandmark/></span><span>teamrecrut<span className="brand-sub">BY STIRRING MINDS</span></span></div>;}
 export default function App(){
  const [page,setPage]=useState("roles"),[roles,setRoles]=useState(LIVE?[]:DEMO_ROLES),[user,setUser]=useState(null),[applications,setApplications]=useState([]),[adminApps,setAdminApps]=useState(LIVE?[]:DEMO_APPLICANTS);
  const [auth,setAuth]=useState(false),[register,setRegister]=useState(false),[selected,setSelected]=useState(null),[applyRole,setApplyRole]=useState(null),[active,setActive]=useState(null),[report,setReport]=useState(null),[practice,setPractice]=useState(false),[pendingRole,setPendingRole]=useState(null);
