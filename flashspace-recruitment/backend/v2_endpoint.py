@@ -2,6 +2,7 @@
 import re
 from .server import APIError
 from .v2_server import InterviewV2App, InterviewV2AI
+from .v2_replay import PlaybackLedger
 
 class EvidenceOnlyAI(InterviewV2AI):
     def evaluate(self,role,answers):
@@ -15,9 +16,33 @@ class ConversationalApp(InterviewV2App):
     def __init__(self,*args,**kwargs):
         if not args and 'ai' not in kwargs:kwargs['ai']=EvidenceOnlyAI()
         super().__init__(*args,**kwargs)
+        self.playback=PlaybackLedger(self.store)
 
     def route(self, env, body):
         path=env.get('PATH_INFO','');method=env.get('REQUEST_METHOD')
+        match=re.fullmatch(r'/api/v2/applications/([\w-]+)/(speech|playback)',path)
+        if match:
+            aid,action=match.groups();u=self.current_user(env)
+            with self.lock:
+                a=self.store.get(aid);f=self.flow(aid)
+                if a['user_id']!=u['id'] or not f:raise APIError(404,'Interview not found.')
+                if not f['active'] or f['status']!='interview':raise APIError(409,'No question is ready.')
+                q=f['active']
+                if action=='playback' and method=='GET':
+                    return {'question_id':q['id'],**self.playback.state(aid,q['id'])},[]
+                if action!='speech' or method!='POST':raise APIError(405,'Method not allowed.')
+                if body.get('question_id')!=q['id']:raise APIError(409,'Question changed.')
+                self.playback.reserve(aid,q['id'])
+            try:
+                self.ai_quota(a,'speech-v2',42)
+                audio=self.ai.speech(q['text'])
+                if not isinstance(audio,bytes) or not audio:raise APIError(502,'No question audio received.')
+            except Exception:
+                self.playback.refund(aid,q['id'])
+                raise
+            # Delivery is counted even if the browser aborts after generation or
+            # autoplay fails. No client-controlled refund or count reset endpoint.
+            return audio,[('Content-Type','audio/mpeg')]
         match=re.fullmatch(r'/api/admin/v2/reports/([\w-]+)',path)
         if match and method=='GET':
             u=self.current_user(env)
@@ -52,9 +77,6 @@ class ConversationalApp(InterviewV2App):
             except Exception:return {'complete':False},[]
         value,headers=super().route(env,body)
         if path=='/api/admin/applications' and method=='GET':
-            # Old report widget assumes numeric criterion scores. Until it is
-            # migrated, keep the factual summary and direct v2 evidence endpoint
-            # rather than displaying fabricated zeros or NaN progress bars.
             for a in value:
                 report=a.get('evaluation')
                 if report and report.get('scoring_status')=='not_scored':
