@@ -1,11 +1,8 @@
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import './base.css';
-import App from './App.jsx';
-import RoleManager from './RoleManager.jsx';
 import IntegratedInterview from './v2/IntegratedInterview.jsx';
-import InterviewReview from './v2/InterviewReview.jsx';
 import Workspace from './workspace/Workspace.jsx';
 const path=window.location.pathname.replace(/\/$/,'');
-const workspace=path==='/account-type'||path.startsWith('/candidate/')||path==='/recruiter/login'||path.startsWith('/recruiter/workspace/');
-createRoot(document.getElementById('root')).render(workspace?<Workspace/>:path==='/interview-v2'?<IntegratedInterview/>:path==='/interview-review'?<InterviewReview/>:path==='/recruiter/roles'?<RoleManager/>:<App/>);
+// WorkspaceApp/local harness must accompany this branch frontend. Not deployed.
+createRoot(document.getElementById('root')).render(path==='/interview-v2'?<IntegratedInterview/>:<Workspace/>);
