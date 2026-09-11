@@ -69,8 +69,9 @@ class ConversationalApp(InterviewV2App):
         if match and method=='POST':
             u=self.current_user(env);a=self.store.get(match[1]);f=self.flow(match[1])
             if a['user_id']!=u['id'] or not f:raise APIError(404,'Interview not found.')
+            if f['status']!='interview' or not f['active']:raise APIError(409,'This interview is not active.')
             self.ai_quota(a,'intro-v2',5)
-            return self.ai.speech('Welcome. We will begin with six questions about your experience, then four questions about your role. Take your time. You can pause or use typing. Listening starts automatically after each question.'),[('Content-Type','audio/mpeg')]
+            return self.ai.speech('Hi, thanks for joining us today. I would like to learn about your experience, how you approach your work, and how your background relates to this opportunity. Speak naturally after each question; listening starts automatically. Let us get started.'),[('Content-Type','audio/mpeg')]
         match=re.fullmatch(r'/api/v2/applications/([\w-]+)/end-check',path)
         if match and method=='POST':
             u=self.current_user(env);a=self.store.get(match[1]);f=self.flow(match[1])
