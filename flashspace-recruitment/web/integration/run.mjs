@@ -10,10 +10,7 @@ if(process.env.GITHUB_ACTIONS!=='true'){console.log('Browser integration skipped
 if(process.env.DATABASE_URL||process.env.CLICKUP_API_TOKEN||process.env.SARVAM_API_KEY)throw Error('CI fixture must not have live provider/database secrets.');
 function run(cmd,args){const r=spawnSync(cmd,args,{stdio:'inherit'});if(r.status!==0)throw Error('Integration dependency setup failed: '+cmd);}
 run('python',['-m','pip','install','-r','../requirements.txt']);run('npx',['playwright','install','--with-deps','chromium']);
-// Chromium's default fake microphone can be silent after noise suppression.
-// Feed a real PCM WAV through getUserMedia instead of faking the meter/check.
-// This tests actual browser capture, resampling and preflight signal detection;
-// it does not pretend that synthetic audio validates Sarvam transcription.
+// Feed actual PCM through browser getUserMedia. Provider transcription is synthetic.
 const fixtureDir=mkdtempSync(join(tmpdir(),'teamrecrut-media-'));
 const microphone=join(fixtureDir,'microphone.wav'),rate=48000,samples=rate*4;
 const wav=Buffer.alloc(44+samples*2);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(rate,24);wav.writeUInt32LE(rate*2,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(samples*2,40);
@@ -39,9 +36,14 @@ try{
  phase='interview';await page.getByRole('button',{name:'Begin interview',exact:true}).click();await page.getByText('Recording this interview',{exact:true}).waitFor();
  await page.waitForFunction(()=>document.querySelector('.room-state')?.textContent==='Interview submitted',{},{timeout:210000});raw=await page.evaluate(async aid=>(await fetch('/api/v2/applications/'+aid)).json(),aid);assert.equal(raw.answers.length,10);assert.equal(raw.status,'completed');assert.equal(await page.locator('.room-error').count(),0);assert.equal(errors.length,0,errors.join('\n'));
  phase='recruiter';const recruiter=await browser.newContext({viewport:{width:1440,height:1000}}),review=await recruiter.newPage();review.setDefaultTimeout(20000);await review.goto(origin+'/recruiter/login');await review.getByLabel('Work email',{exact:true}).fill('team@stirringminds.com');await review.getByLabel('Password',{exact:true}).fill('synthetic-browser-password-123');await review.getByRole('button',{name:'Sign in',exact:true}).click();await review.waitForURL('**/recruiter/workspace/dashboard');
+ // Report generation and ClickUp sync are background work. Submission itself
+ // must not imply their completion. Wait for their real states, not a fixed
+ // sleep, fabricated report, or manually executed worker call.
+ phase='report-and-sync';
+ await review.waitForFunction(async aid=>{const response=await fetch('/api/admin/v2/reports/'+aid);if(!response.ok)return false;const result=await response.json();return result.report?.scoring_status==='not_scored'&&result.sync_status==='Synced';},aid,{timeout:20000,polling:500});
  const results=await review.evaluate(async aid=>{const records=await(await fetch('/api/admin/applications/'+aid+'/recordings')).json();const report=await(await fetch('/api/admin/v2/reports/'+aid)).json();const media=await fetch('/api/recordings/'+records.recordings[0].id+'/media');return {recordings:records.recordings.length,recordingStatus:records.recordings[0].status,bytes:(await media.arrayBuffer()).byteLength,report:report.report,sync:report.sync_status};},aid);
  assert.equal(results.recordings,1);assert.equal(results.recordingStatus,'ready');assert(results.bytes>1000);assert.equal(results.report.scoring_status,'not_scored');assert.equal(results.sync,'Synced');
- await review.goto(origin+'/interview-review?application='+aid);await review.waitForFunction(()=>document.querySelector('video'));await review.waitForFunction(()=>document.querySelector('video')?.videoWidth>0);
+ phase='private-review';await review.goto(origin+'/interview-review?application='+aid);await review.waitForFunction(()=>document.querySelector('video'));await review.waitForFunction(()=>document.querySelector('video')?.videoWidth>0);
  assert.equal(await page.evaluate(async()=>(await fetch('/api/admin/applications')).status),403);
  console.log('PASS: Chromium + ASGI/WSGI + SQLite: signup, profile persistence, Apply, no pre-Begin recording, device checks, no early question DOM, mobile fit, automatic ten-answer interview, MediaRecorder upload and private video decoding, evidence report, mocked ClickUp sync, recruiter login and candidate access rejection. Sarvam/ClickUp boundaries synthetic.');
 }catch(e){
