@@ -43,7 +43,7 @@ class JourneyTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         p=patch.dict(os.environ,{'APP_ORIGIN':'http://localhost:8000'});p.start();self.addCleanup(p.stop)
         self.clock=time.time();p=patch('time.time',side_effect=lambda:self.clock);p.start();self.addCleanup(p.stop)
-        self.provider=Provider();self.ai=EvidenceOnlyAI();self.ai.provider=self.provider
+        self.provider=Provider();self.ai=object.__new__(EvidenceOnlyAI);self.ai.provider=self.provider
         self.app=WorkspaceApp(db_path=self.tmp.name+'/test.db',roles=[ROLE],ai=self.ai,start_worker=False,recording_root=self.tmp.name+'/recordings');self.cookie=''
         self.clickup=BoundaryClickUp(self.app.store);self.app.clickup=self.clickup
         with self.app.store.db() as db:db.execute('INSERT INTO settings VALUES (?,?)',('v2-bank:growth','sales'))
@@ -78,7 +78,7 @@ class JourneyTests(unittest.TestCase):
         self.assertEqual(self.req(media+'/chunk/1',video,origin='https://wrong.example')['status'],403)
         first=f['active']['id']
         for i in range(3):self.ok(base+'/speech',{'question_id':first})
-        self.assertEqual(self.req(base+'/speech',{'question_id':first})['status'],409)
+        self.assertEqual(self.req(base+'/speech',{'question_id':first})['status'],429)
         self.assertEqual(self.ok(base+'/playback')['replays_remaining'],0)
         for i in range(10):
             self.clock+=61
