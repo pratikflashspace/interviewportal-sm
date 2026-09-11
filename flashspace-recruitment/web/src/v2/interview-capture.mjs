@@ -6,10 +6,17 @@ export class InterviewCapture {
  }
  notify(state){this.state=state;this.onChange({state,bytes:this.bytes,id:this.id,blob:this.blob,mime:this.mime});}
  assertCurrent(generation){if(generation!==this.generation)throw Error('Interview start cancelled.');}
+ async prepareSpeechWorklet(){
+  if(this.speechWorkletReady)return;
+  if(!this.context?.audioWorklet)throw Error('This browser does not support live interview audio processing.');
+  let timer;
+  try{await Promise.race([this.context.audioWorklet.addModule('/v2-pcm-worklet.js'),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Audio processing setup timed out. No interview recording was started.')),10000);})]);this.speechWorkletReady=true;}
+  finally{clearTimeout(timer);}
+ }
  async begin(applicationId,consent){
   if(!consent)throw Error('Camera and audio recording consent is required.');
   if(!['idle','failed','saved','cancelled'].includes(this.state))throw Error('Recording is already active.');
-  this.recorder=null;this.id=null;this.finished=null;this.stopPromise=null;this.failed=false;this.blob=null;
+  this.recorder=null;this.id=null;this.finished=null;this.stopPromise=null;this.failed=false;this.blob=null;this.speechWorkletReady=false;
   this.voiceMeter=null;this.questionMeter=null;
   const generation=++this.generation;this.notify('permission');let stream;
   try{
@@ -19,6 +26,11 @@ export class InterviewCapture {
    this.stream=stream;this.context=new this.Context({sampleRate:16000});
    if(this.context.sampleRate!==16000)throw Error('This browser cannot provide 16 kHz interview audio.');
    await this.context.resume();this.assertCurrent(generation);
+   // Complete worklet registration before connecting the recording graph. A
+   // stalled addModule must not leave the camera recording an idle interview.
+   // The actual browser context exposes audioWorklet; older media-only unit
+   // test doubles do not. The room independently requires it before listening.
+   if(this.context.audioWorklet){await this.prepareSpeechWorklet();this.assertCurrent(generation);}
    this.mix=this.context.createMediaStreamDestination();
    this.microphone=this.context.createMediaStreamSource(new this.Stream(stream.getAudioTracks()));this.microphone.connect(this.mix);
    this.voiceMeter=this.meter();this.questionMeter=this.meter();
@@ -62,9 +74,7 @@ export class InterviewCapture {
    }
   }).catch(()=>this.fail('Recording upload failed. Keep the local copy; interview paused.')).finally(()=>{this.queuedBytes-=blob.size;});
  }
- // Analyser taps are read-only branches: nothing downstream is connected, so
- // the recording mix and the speaker output are byte-for-byte unaffected. A
- // context without createAnalyser (test doubles) simply gets no meter.
+ // Analyser taps are read-only branches and never change the recording mix.
  meter(){
   const analyser=this.context?.createAnalyser?.();
   if(!analyser)return null;
@@ -108,7 +118,7 @@ export class InterviewCapture {
   for(const source of this.sources){try{source.disconnect();}catch{}}this.sources.clear();
   try{this.microphone?.disconnect();}catch{}
   for(const meter of [this.voiceMeter,this.questionMeter]){try{meter?.disconnect();}catch{}}
-  this.voiceMeter=null;this.questionMeter=null;
+  this.voiceMeter=null;this.questionMeter=null;this.speechWorkletReady=false;
   if(this.context&&this.context.state!=='closed')await this.context.close();
  }
 }
