@@ -1,9 +1,11 @@
-"""Persisted in-scope sidebar features. No email, AI scoring or external fetches."""
+"""Persisted in-scope sidebar features. No email or AI scoring."""
 import json
 import re
 import uuid
 from urllib.parse import urlsplit
 from .server import APIError, digest, hash_password, verify_password, now
+from .workspace_hiring_sync import WorkspaceClickUp, save_hiring_stage
+from .integrated_recordings import InterviewRecordingClickUp
 
 STAGES=('applied','under_review','shortlisted','contacted','hired','rejected')
 DEFAULT_SETTINGS={'preferred_location':'','work_mode':'any'}
@@ -14,6 +16,9 @@ class WorkspaceFeatures:
             db.execute('CREATE TABLE IF NOT EXISTS workspace_records (key TEXT PRIMARY KEY, data TEXT NOT NULL, version INTEGER NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS workspace_events (id TEXT PRIMARY KEY, application_id TEXT NOT NULL REFERENCES applications(id), actor TEXT NOT NULL, stage TEXT NOT NULL, created TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS workspace_support (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), subject TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL, reply TEXT NOT NULL, created TEXT NOT NULL)')
+        # Replace only the default workspace integration; preserve injected test
+        # doubles/custom integrations. Legacy non-workspace runtimes unchanged.
+        if type(self.clickup) is InterviewRecordingClickUp:self.clickup=WorkspaceClickUp(self.store)
 
     def record(self,key,default):
         with self.store.db() as db:row=db.execute('SELECT data,version FROM workspace_records WHERE key=?',(key,)).fetchone()
@@ -78,14 +83,8 @@ class WorkspaceFeatures:
             return [self.tracking(a) for a in apps],[]
         match=re.fullmatch(r'/api/workspace/recruiter/applications/([\w-]+)/stage',path)
         if match and method=='POST':
-            u=self.current_user(env);a=self.store.get(match[1]);stage=body.get('stage')
-            if set(body)!={'stage','version'} or stage not in STAGES or type(body['version']) is not int:raise APIError(400,'Choose a supported hiring stage.')
-            if a['status']!='completed' and stage not in ('applied','rejected'):raise APIError(409,'Complete the interview before moving to review or selection.')
-            with self.lock,self.store.db() as db:
-                row=db.execute('INSERT INTO workspace_records(key,data,version) VALUES (?,?,1) ON CONFLICT(key) DO UPDATE SET data=excluded.data,version=workspace_records.version+1 WHERE workspace_records.version=? RETURNING version',('application:'+a['id'],json.dumps({'stage':stage}),body['version'])).fetchone() if body['version']==0 else db.execute('UPDATE workspace_records SET data=?,version=version+1 WHERE key=? AND version=? RETURNING version',(json.dumps({'stage':stage}),'application:'+a['id'],body['version'])).fetchone()
-                if not row:raise APIError(409,'Application changed. Refresh before updating.')
-                db.execute('INSERT INTO workspace_events VALUES (?,?,?,?,?)',(uuid.uuid4().hex,a['id'],u['id'],stage,now()))
-            return self.tracking(a),[]
+            u=self.current_user(env)
+            return save_hiring_stage(self,match[1],u,body),[]
         if path=='/api/workspace/recruiter/candidates' and method=='GET':
             self.current_user(env)
             with self.store.db() as db:rows=db.execute('SELECT DISTINCT users.id,users.name,users.email FROM users JOIN applications ON applications.user_id=users.id WHERE users.admin=0').fetchall()
