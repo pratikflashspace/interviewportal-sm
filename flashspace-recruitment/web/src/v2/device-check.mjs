@@ -13,6 +13,8 @@ export class DeviceCheck {
    if(generation!==this.generation)throw Error('Device check cancelled.');
    if(context.sampleRate!==16000)throw Error('This browser cannot provide the required audio format.');
    this.stream=stream;this.context=context;this.source=context.createMediaStreamSource(stream);this.meter=context.createAnalyser();this.meter.fftSize=256;this.source.connect(this.meter);
+   // Pull the analyser graph without playing microphone audio back to the user.
+   this.silent=context.createGain();this.silent.gain.value=0;this.meter.connect(this.silent);this.silent.connect(context.destination);
    return stream;
   }catch(e){stream?.getTracks().forEach(t=>t.stop());if(context&&context.state!=='closed')await context.close();throw e;}
  }
@@ -21,5 +23,5 @@ export class DeviceCheck {
   if(!this.context||this.context.state!=='running')throw Error('Run device checks first.');
   const oscillator=this.context.createOscillator(),gain=this.context.createGain();oscillator.frequency.value=440;gain.gain.value=.08;oscillator.connect(gain);gain.connect(this.context.destination);oscillator.start();oscillator.stop(this.context.currentTime+.4);oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();};
  }
- async close(){this.generation++;this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;this.source?.disconnect();this.meter?.disconnect();this.meter=null;if(this.context&&this.context.state!=='closed')await this.context.close();this.context=null;}
+ async close(){this.generation++;this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;this.source?.disconnect();this.meter?.disconnect();this.silent?.disconnect();this.silent=null;this.meter=null;if(this.context&&this.context.state!=='closed')await this.context.close();this.context=null;}
 }
