@@ -1,10 +1,26 @@
-// CI-only browser diagnostics. Static operation labels only; no credentials/audio.
+// CI-only diagnostics. No production changes and no live-provider requests.
 import {chromium} from 'playwright';
 const pages=[],requests=[];
 if(process.env.GITHUB_ACTIONS==='true'){
  const launch=chromium.launch.bind(chromium);
  chromium.launch=async(...args)=>{
   const browser=await launch(...args),newContext=browser.newContext.bind(browser);
+  // Probe native APIs before instrumentation. The local fixture is already up.
+  const probeContext=await newContext(),probe=await probeContext.newPage();
+  await probe.goto('http://127.0.0.1:8765/api/health');
+  const probes=await probe.evaluate(async()=>{
+   const response=await fetch('/v2-pcm-worklet.js');
+   const results=[{fetchStatus:response.status,contentType:response.headers.get('content-type')}];
+   for(const graph of [false,true]){
+    const context=new AudioContext({sampleRate:16000});await context.resume();let oscillator,gain,timer;
+    if(graph){oscillator=context.createOscillator();gain=context.createGain();gain.gain.value=0;oscillator.connect(gain);gain.connect(context.destination);oscillator.start();}
+    const start=context.currentTime;
+    try{const outcome=await Promise.race([context.audioWorklet.addModule('/v2-pcm-worklet.js').then(()=> 'loaded',e=>'error:'+e.name),new Promise(r=>{timer=setTimeout(()=>r('timeout'),3000);})]);results.push({graph,outcome,state:context.state,clockAdvanced:context.currentTime>start});}
+    finally{clearTimeout(timer);oscillator?.stop();oscillator?.disconnect();gain?.disconnect();await context.close();}
+   }
+   return results;
+  });
+  console.error('::notice::NATIVE_WORKLET_PROBES '+JSON.stringify(probes));await probeContext.close();
   browser.newContext=async(...args)=>{
    const context=await newContext(...args);
    await context.addInitScript(()=>{
@@ -21,7 +37,6 @@ if(process.env.GITHUB_ACTIONS==='true'){
    context.on('page',page=>{pages.push(page);page.on('response',r=>{const p=new URL(r.url()).pathname;const type=p.endsWith('/speech')?'speech':p.endsWith('/intro')?'intro':p.endsWith('/answer')?'answer':p.endsWith('/end-check')?'end-check':p.endsWith('v2-pcm-worklet.js')?'worklet':null;if(type){requests.push([type,r.status()]);if(requests.length>30)requests.shift();}});});
    return context;
   };
-  // Capture before run.mjs closes the browser in its finally block.
   const close=browser.close.bind(browser);
   browser.close=async(...a)=>{for(const page of pages){if(!page.isClosed()){const data=await page.evaluate(()=>({media:window.__mediaSetup,room:document.querySelector('.room-state')?.textContent})).catch(()=>null);console.error('::notice::SYNTHETIC_MEDIA_SETUP '+JSON.stringify({data,requests}));}}return close(...a);};
   return browser;
