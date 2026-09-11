@@ -1,19 +1,17 @@
-"""Branch-only Teamrecrut workspace foundation. Not a release entry point.
-
-No automatic recruiter provisioning, OAuth wiring, or MFA bypass is provided.
-The existing deployed runtime does not import this module.
+"""Branch-only Teamrecrut workspaces. No automatic account provisioning.
+MFA deferred by creator; Google and release integration remain separate work.
 """
 import json
-import os
 import re
-import secrets
 import threading
 import uuid
 from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
 from .interview_release import InterviewRelease
-from .server import APIError, App, digest, hash_password, now, text, verify_password
+from .server import APIError, digest, hash_password, now, text, verify_password
+from .workspace_features import WorkspaceFeatures
 
+RECRUITER_EMAIL='team@stirringminds.com'
 PROFILE_FIELDS = {
     'candidate': {'name':100, 'phone':40, 'summary':2000, 'education':4000,
                   'experience':4000, 'skills':2000, 'projects':4000,
@@ -21,9 +19,9 @@ PROFILE_FIELDS = {
     'recruiter': {'name':100, 'phone':40, 'designation':150, 'bio':2000},
 }
 
-class WorkspaceApp(InterviewRelease):
+class WorkspaceApp(WorkspaceFeatures, InterviewRelease):
     def bootstrap_admin(self):
-        # Only a separately authorized administrative process may provision it.
+        # An independently authorized administrative process must provision it.
         pass
 
     def __init__(self,*args,**kwargs):
@@ -31,22 +29,19 @@ class WorkspaceApp(InterviewRelease):
         super().__init__(*args,start_worker=False,**kwargs)
         with self.store.db() as db:
             db.execute('CREATE TABLE IF NOT EXISTS workspace_profiles (user_id TEXT PRIMARY KEY REFERENCES users(id), data TEXT NOT NULL, version INTEGER NOT NULL)')
-            # Existing accounts use lowercase emails. Detect ambiguous imported
-            # identities before installing the cross-role normalized constraint.
             rows=db.execute('SELECT LOWER(TRIM(email)) AS normalized, COUNT(*) AS n FROM users GROUP BY LOWER(TRIM(email)) HAVING COUNT(*)>1').fetchall()
             if rows:raise RuntimeError('Duplicate normalized account emails require administrator reconciliation.')
             db.execute('CREATE UNIQUE INDEX IF NOT EXISTS workspace_email_normalized ON users(LOWER(TRIM(email)))')
+        self.init_features()
         if start:threading.Thread(target=self.worker,daemon=True).start()
 
-    def recruiter_email(self):
-        return os.getenv('TEAMRECRUT_RECRUITER_EMAIL','').strip().lower()
+    def recruiter_email(self):return RECRUITER_EMAIL
 
     def user_json(self,u):
         if not u:return None
         return {**super().user_json(u),'role':'recruiter' if u['admin'] else 'candidate'}
 
     def session(self,user):
-        # A new cookie namespace means legacy fs_session cookies are not trusted.
         key,value=super().session(user)
         return key,value.replace('fs_session=','tr_session=',1)
 
@@ -57,7 +52,7 @@ class WorkspaceApp(InterviewRelease):
         adapted={**env,'HTTP_COOKIE':'fs_session='+value.value if value else ''}
         u=super().current_user(adapted,required)
         if not u:return None
-        if u['admin'] and (not self.recruiter_email() or u['email'].strip().lower()!=self.recruiter_email()):
+        if u['admin'] and u['email'].strip().lower()!=self.recruiter_email():
             raise APIError(403,'This recruiter account is not authorised.')
         path=env.get('PATH_INFO','')
         recruiter_path=path.startswith('/api/admin/') or path.startswith('/api/workspace/recruiter/') or bool(re.fullmatch(r'/api/recordings/[a-f0-9]{32}/(media|remove)',path))
@@ -70,7 +65,6 @@ class WorkspaceApp(InterviewRelease):
         email=text(body,'email',3,254).lower()
         if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email):raise APIError(400,'Enter a valid email address.')
         password=body.get('password')
-        # Preserve exact passwords; whitespace is not silently trimmed.
         if not isinstance(password,str) or not 12<=len(password)<=128:raise APIError(400,'Use a password of 12–128 characters.')
         return email,password
 
@@ -97,10 +91,7 @@ class WorkspaceApp(InterviewRelease):
                 right_role=bool(u and bool(u['admin'])==(role=='recruiter'))
                 allowed=role!='recruiter' or email==self.recruiter_email()
                 if not valid or not right_role or not allowed:raise APIError(401,'Email or password is incorrect for this account type.')
-                if role=='recruiter':
-                    # Fail closed: no password-only recruiter session while MFA
-                    # activation/recovery remains an unfinished integration.
-                    raise APIError(503,'Recruiter activation and MFA setup must be completed before access is enabled.')
+                # Creator explicitly deferred MFA. Never auto-provision/promote.
         return self.user_json(u),[self.session(u)]
 
     def get_profile(self,u):
@@ -127,7 +118,6 @@ class WorkspaceApp(InterviewRelease):
                     if parsed.scheme!='https' or not parsed.netloc or parsed.username or parsed.password:raise APIError(400,'Use an HTTPS resume link without credentials.')
                 updated[key]=value.strip()
             with self.store.db() as db:
-                # Conditional upsert also protects against other server processes.
                 row=db.execute('INSERT INTO workspace_profiles(user_id,data,version) VALUES (?,?,1) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data,version=workspace_profiles.version+1 WHERE workspace_profiles.version=? RETURNING version',
                     (u['id'],json.dumps(updated),old['version'])).fetchone()
                 if not row:raise APIError(409,'Profile changed. Reload before saving.')
@@ -169,5 +159,3 @@ class WorkspaceApp(InterviewRelease):
                     matches.append({'role':role,'reason':'Similar skills: '+', '.join(shared) if shared else 'Same department as a role you applied for.'})
             return matches,[]
         return super().route(env,body)
-
-# No create_app entry point until MFA, Google and release checks are complete.
