@@ -21,7 +21,7 @@ def verify_google_credential(credential, audience):
     # Lazy imports leave manual login usable when Google is disabled.
     from google.oauth2 import id_token
     from google.auth.transport.requests import Request
-    from google.auth.exceptions import TransportError
+    from google.auth.exceptions import TransportError, GoogleAuthError
     import requests
     class BoundedRequest(Request):
         def __call__(self, *args, **kwargs):
@@ -31,10 +31,12 @@ def verify_google_credential(credential, audience):
     try:
         with requests.Session() as session:
             return id_token.verify_oauth2_token(credential, BoundedRequest(session=session), audience, clock_skew_in_seconds=0)
-    except ValueError:
-        raise APIError(401, 'Google sign-in could not be verified. Please try again.') from None
     except (TransportError, requests.RequestException):
         raise APIError(503, 'Google verification is temporarily unavailable. Use email and password or try again later.') from None
+    except (ValueError, GoogleAuthError):
+        # Wrong issuer uses GoogleAuthError, whereas other invalid claims use
+        # ValueError. Both must reject without exposing provider exception text.
+        raise APIError(401, 'Google sign-in could not be verified. Please try again.') from None
 
 
 def validate_identity(claims, nonce, audience):
