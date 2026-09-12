@@ -1,10 +1,11 @@
 // Approved login-page scope: compact white card on lilac; no workspace sidebar.
 // Teamrecrut waveform mark, Manrope headings/Hind UI, violet #7044dd.
-// Google/recovery remain unavailable, not represented by non-working controls.
+// Candidate GIS is disabled until verified configuration; manual login remains.
 import React,{useEffect,useRef,useState} from 'react';
 import {ArrowLeft,ArrowRight,Eye,EyeOff,ShieldCheck,UserRound} from 'lucide-react';
 import {Button,Input,Field,FieldGroup,FieldLabel,Alert,AlertDescription} from '@kits/shadcn-ui';
 import {loginManually,loginDestination} from './login-client.mjs';
+import CandidateGoogleSignIn from './CandidateGoogleSignIn.jsx';
 import './login.css';
 function LoginBrand(){return <div className="login-brand" aria-label="teamrecrut by Stirring Minds"><span className="login-mark"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">{[[1.6,7.6],[5.8,12],[15.8,13],[20,7.2]].map(([x,h])=><rect key={x} x={x} y={(24-h)/2} width="2.6" height={h} rx="1.3" fill="currentColor"/>)}<circle cx="12" cy="4.5" r="2.6" fill="#d9f279"/><rect x="10.4" y="8.9" width="3.2" height="11.6" rx="1.6" fill="#d9f279"/></svg></span><span>teamrecrut<small>BY STIRRING MINDS</small></span></div>;}
 const navigate=path=>window.location.assign(path);
@@ -27,6 +28,9 @@ export default function LoginPage({role='candidate',authenticate=loginManually,o
   }catch(e){if(mounted.current)setError(e.message||'Unable to sign in. Please try again.');}
   finally{if(mounted.current)setBusy(false);submitting.current=false;}
  }
+ function googleStart(){if(submitting.current||recruiter)return false;submitting.current=true;setBusy(true);setError('');return true;}
+ function googleFinish(){submitting.current=false;if(mounted.current)setBusy(false);}
+ function googleSuccess(user){if(user?.role!=='candidate'||user.admin!==false)return;passwordRef.current.value='';setVisible(false);onSuccess(user,loginDestination('candidate'));}
  function link(e,path){e.preventDefault();if(!busy)onNavigate(path);}
  if(!['candidate','recruiter'].includes(role))return <p role="alert">Choose Candidate or Recruiter before signing in.</p>;
  return <main className="login-page"><div className="login-wrap"><LoginBrand/>
@@ -40,6 +44,7 @@ export default function LoginPage({role='candidate',authenticate=loginManually,o
  {error&&<Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
  <Button type="submit" disabled={busy} className="login-submit">{busy?'Signing in…':'Sign in'}{!busy&&<ArrowRight aria-hidden="true"/>}</Button><span className="login-announcement" role="status">{busy?'Signing in. Please wait.':''}</span>
  </FieldGroup></form>
+ {!recruiter&&<CandidateGoogleSignIn preview={preview} disabled={busy} onStart={googleStart} onFinish={googleFinish} onSuccess={googleSuccess}/>}
  {recruiter?<p className="login-restricted"><ShieldCheck size={16} aria-hidden="true"/>Only your authorised account can access this workspace.</p>:<p className="login-signup">New to Teamrecrut? <a href="/candidate/signup" aria-disabled={busy} onClick={e=>link(e,'/candidate/signup')}>Create candidate account</a></p>}
  </section><p className="login-footnote">{recruiter?'Private hiring workspace. No public registration.':'Your opportunities. Your applications. Your next chapter.'}</p>
  </div></main>;
