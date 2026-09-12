@@ -1,0 +1,57 @@
+/* Interview screen only. Paired participants -> spoken question -> listening.
+   Preserve Teamrecrut's Manrope/Hind and violet/lilac identity. No global overrides. */
+.focused-room{--room-ink:#241c38;--room-muted:#655270;--room-accent:#7044dd;--room-line:#e1d8ef;max-width:1080px;margin:auto;padding:24px 28px 56px;color:var(--room-ink);font-family:Hind,sans-serif}
+.focused-room *{box-sizing:border-box}
+.focused-room>header{display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--room-line);padding-bottom:18px}
+.focused-room>header>div{display:flex;gap:10px;flex-wrap:wrap}
+.focused-room a{color:#5734a0;text-underline-offset:4px}
+.focused-room>header>a{font-family:Manrope,sans-serif;font-weight:700;text-decoration:none;font-size:16px}
+.focused-room h1{font:600 clamp(26px,3vw,38px)/1.25 Manrope,sans-serif;letter-spacing:-1px;margin:28px 0;text-align:center}
+.focused-room h2{font:600 18px/1.4 Manrope,sans-serif;margin:0 0 12px}
+.focused-room p{font-size:16px;line-height:1.65;margin:12px 0;overflow-wrap:anywhere}
+.focused-room button{border:1px solid #ddd3ed;border-radius:10px;padding:11px 18px;min-height:44px;background:var(--room-accent);color:#fff;font:600 16px Hind,sans-serif;cursor:pointer}
+.focused-room button:disabled{opacity:.55;cursor:not-allowed}
+.focused-room button:focus-visible,.focused-room a:focus-visible,.focused-room input:focus-visible{outline:3px solid #7044dd;outline-offset:4px}
+.focused-room header button{background:#fff;color:#5734a0}
+.focused-room .room-participants{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:stretch}
+.focused-room .room-participants>section{border:1px solid var(--room-line);border-radius:18px;background:#fff;padding:20px;min-width:0;display:flex;flex-direction:column}
+.focused-room .room-participants h2{font-size:16px;margin:0 0 14px}
+.focused-room .room-interviewer{align-items:center;justify-content:center;background:#eee8fb;min-height:260px}
+.focused-room .room-interviewer>h2{align-self:flex-start}
+.focused-room .room-interviewer>.voice-viz{flex:1;align-self:stretch;justify-content:center;min-height:160px}
+.focused-room .room-interviewer>p{font-size:14px;color:var(--room-muted);margin:12px 0 0}
+.focused-room .room-candidate video{display:block;width:100%;height:clamp(180px,23vw,290px);object-fit:contain;border-radius:12px;background:var(--room-ink)}
+.focused-room .room-candidate p{font-size:14px;color:var(--room-muted);margin:12px 0 0}
+.focused-room .voice-viz{display:flex;align-items:center;gap:10px;max-width:100%;min-width:0;opacity:1}
+.focused-room .voice-viz-bars{display:flex;align-items:center;justify-content:center;gap:clamp(2px,.4vw,5px);height:100px;min-width:0;max-width:100%}
+.focused-room .voice-viz-bars span{display:block;width:clamp(3px,.5vw,6px);height:100%;flex-shrink:1;border-radius:5px;background:#a48ace;transform-origin:center}
+.focused-room .voice-viz-interviewer.is-live .voice-viz-bars span{background:var(--room-accent)}
+.focused-room .voice-viz-candidate.is-live .voice-viz-bars span{background:#267451}
+.focused-room .voice-viz-label{font:600 14px Hind,sans-serif;color:var(--room-muted);min-width:0;letter-spacing:0;text-transform:none}
+/* The central state already says who is speaking. Avoid a duplicate beside
+   the interviewer waveform; this is presentational, not a hidden question. */
+.focused-room .room-interviewer .voice-viz-label{display:none}
+.focused-room>.voice-viz{justify-content:center;margin:8px auto;max-width:280px}
+.focused-room>.voice-viz .voice-viz-bars{height:28px;gap:3px}
+.focused-room>.voice-viz .voice-viz-bars span{width:4px}
+.focused-room .room-question{padding:24px 28px;border-radius:14px;background:#fff;border:1px solid var(--room-line);margin-top:20px;min-height:112px}
+.focused-room .room-question h3{font:500 clamp(19px,2vw,24px)/1.6 Manrope,sans-serif;letter-spacing:-.3px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+.focused-room .room-state{display:table;margin:20px auto 12px;padding:10px 20px;border:1px solid #ddd3ed;border-radius:999px;background:#eee8fb;text-align:center;color:#5734a0;font-size:18px;font-weight:600;max-width:100%}
+.focused-room .room-preflight,.focused-room .room-help{padding:24px;background:#fff;border:1px solid var(--room-line);border-radius:14px;margin:24px 0}
+.focused-room .room-preflight label{display:flex;gap:12px;align-items:flex-start;margin:16px 0;line-height:1.5;font-size:16px}
+.focused-room .room-preflight input[type=checkbox]{width:20px;height:20px;min-height:0;margin:3px 0 0;flex:none;accent-color:var(--room-accent)}
+.focused-room .room-preflight>button{margin:8px 10px 8px 0;max-width:100%}
+.focused-room .room-preflight>button:last-child{display:block;margin-top:22px}
+.focused-room .room-transcript{border-top:1px solid var(--room-line);margin-top:24px;padding-top:22px}
+.focused-room .room-transcript p{white-space:pre-wrap}
+.focused-room .room-transcript small{font-size:14px;color:var(--room-muted)}
+.focused-room .room-error{padding:16px;background:#fff0ee;color:#8e2626;border:1px solid #e8bcb5;border-radius:10px}
+.focused-room .room-replay{display:block;margin:14px auto;background:#fff;color:#5734a0}
+@media(max-width:640px){
+ .focused-room{padding:18px 16px 40px}.focused-room>header{align-items:flex-start;flex-direction:column}.focused-room h1{text-align:left;font-size:27px;margin:24px 0}
+ .focused-room .room-participants{gap:12px}.focused-room .room-participants>section{padding:12px;border-radius:12px}.focused-room .room-participants h2{font-size:14px}
+ .focused-room .room-interviewer{min-height:180px}.focused-room .room-interviewer>.voice-viz{min-height:100px}.focused-room .room-interviewer .voice-viz-bars{height:64px;gap:2px}.focused-room .room-interviewer .voice-viz-bars span{width:3px}
+ .focused-room .room-candidate video{height:150px}.focused-room .room-question{padding:18px;min-height:106px}.focused-room .room-preflight,.focused-room .room-help{padding:18px}.focused-room .room-state{font-size:16px;padding:9px 14px}
+}
+@media(max-width:360px){.focused-room .room-participants{grid-template-columns:minmax(0,1fr)}.focused-room .room-candidate video{height:200px}}
+@media(prefers-reduced-motion:reduce){.focused-room *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
