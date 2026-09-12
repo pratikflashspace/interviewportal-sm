@@ -3,10 +3,12 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {checkGoogleLogin} from './google-login.mjs';
+import {installReportDiagnostics} from './report-diagnostics.mjs';
 if(process.env.GITHUB_ACTIONS==='true'){
  const launch=chromium.launch.bind(chromium);
  chromium.launch=async(...args)=>{
   const browser=await launch(...args);let context;
+  installReportDiagnostics(browser);
   try{
    context=await browser.newContext();const page=await context.newPage();
    await page.goto('http://127.0.0.1:8765/api/health');

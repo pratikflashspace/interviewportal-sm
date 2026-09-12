@@ -8,3 +8,8 @@ export function watchReports(page){
  });
  return ()=>JSON.stringify(reads);
 }
+export function installReportDiagnostics(browser){
+ const create=browser.newContext.bind(browser),close=browser.close.bind(browser),readers=[];
+ browser.newContext=async(...args)=>{const context=await create(...args);context.on('page',page=>readers.push(watchReports(page)));return context;};
+ browser.close=async(...args)=>{for(const read of readers){const result=read();if(result!=='[]')console.log('::notice title=Synthetic report observations::'+result);}return close(...args);};
+}
