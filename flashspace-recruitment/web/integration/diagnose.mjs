@@ -2,6 +2,7 @@
 // Playwright 1.55.1 stalls addModule even on a bare page (upstream #37592).
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
+import {checkGoogleLogin} from './google-login.mjs';
 if(process.env.GITHUB_ACTIONS==='true'){
  const launch=chromium.launch.bind(chromium);
  chromium.launch=async(...args)=>{
@@ -25,7 +26,7 @@ if(process.env.GITHUB_ACTIONS==='true'){
    });
    assert.equal(result.rate,16000);assert.equal(result.bytes,640);assert.equal(result.nonzero,true);
    console.log('PASS: native AudioWorklet loads and produces nonzero 16 kHz PCM frames before full browser integration.');
-   await context.close();return browser;
+   await context.close();await checkGoogleLogin(browser);return browser;
   }catch(e){await context?.close();await browser.close();throw e;}
  };
 }
