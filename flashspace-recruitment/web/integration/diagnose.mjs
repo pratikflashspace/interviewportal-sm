@@ -7,6 +7,7 @@ import {checkCandidateDashboard} from './candidate-dashboard.mjs';
 import {checkExploreJobs} from './explore-jobs.mjs';
 import {checkMyApplications} from './my-applications.mjs';
 import {checkMyInterviews} from './my-interviews.mjs';
+import {checkCandidateProfile} from './candidate-profile.mjs';
 import {installReportDiagnostics} from './report-diagnostics.mjs';
 if(process.env.GITHUB_ACTIONS==='true'){
  const launch=chromium.launch.bind(chromium);
@@ -14,6 +15,7 @@ if(process.env.GITHUB_ACTIONS==='true'){
   const browser=await launch(...args);let context;
   installReportDiagnostics(browser);
   try{
+   await checkCandidateProfile(browser);
    await checkMyInterviews(browser);
    await checkMyApplications(browser);
    await checkExploreJobs(browser);
