@@ -2,10 +2,12 @@
 import unittest
 from unittest.mock import patch
 from backend.candidate_google import WorkspaceApp, ManualWorkspaceApp
+from backend.candidate_account import WorkspaceApp as AccountWorkspaceApp
 from backend import workspace_staging_asgi
 class GoogleHeaderTests(unittest.TestCase):
     def test_staging_uses_google_capable_app(self):
-        self.assertIs(workspace_staging_asgi.WorkspaceApp,WorkspaceApp)
+        self.assertIs(workspace_staging_asgi.WorkspaceApp,AccountWorkspaceApp)
+        self.assertTrue(issubclass(AccountWorkspaceApp,WorkspaceApp))
     def test_google_origins_only_on_enabled_candidate_login(self):
         app=object.__new__(WorkspaceApp)
         original="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"
