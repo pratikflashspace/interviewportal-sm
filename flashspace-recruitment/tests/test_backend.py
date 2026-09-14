@@ -77,7 +77,15 @@ class BackendTests(unittest.TestCase):
     def test_provider_failure_preserves_progress(self):
         self.register();a=self.apply();self.ai.fail=True;r=self.req(f"/api/applications/{a['id']}/answer",{'turn':0,'answer':'I built an onboarding process.'});self.assertEqual(r['status'],502);self.assertEqual(self.req('/api/applications')['body'][0]['answers'],[])
     def test_report_failure_still_syncs_transcript(self):
-        self.register();a=self.complete();self.ai.fail=True;self.app.work_once();self.assertEqual(len(self.cu.records[-1]['answers']),4);self.assertEqual(self.req('/api/applications')['body'][0]['sync_status'],'Retry pending')
+        # Fixed bug: a failed report must not hold the sync state hostage.
+        # The transcript syncs, the version is marked synced, and the report
+        # moves to an independent pending retry lane.
+        self.register();a=self.complete();self.ai.fail=True;self.app.work_once()
+        self.assertEqual(len(self.cu.records[-1]['answers']),4)
+        self.assertEqual(self.req('/api/applications')['body'][0]['sync_status'],'Synced')
+        with self.app.store.db() as db:
+            row=db.execute('SELECT failures FROM pending_reports WHERE application_id=?',(a['id'],)).fetchone()
+        self.assertIsNotNone(row,'failed report must leave a pending retry job')
     def test_clickup_failure_retry(self):
         self.register();a=self.apply();self.cu.fail=True;self.app.work_once();self.assertEqual(self.app.store.get(a['id'])['sync_status'],'Retry pending');self.cu.fail=False
         with self.app.store.db() as db:db.execute('UPDATE applications SET next_retry=0')
