@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from .interview_release import InterviewRelease
 from .server import APIError, digest, hash_password, now, text, verify_password
 from .workspace_features import WorkspaceFeatures
+from .candidate_profile import PATH as CANDIDATE_PROFILE_PATH, handle as candidate_profile_route, compatibility_fields
 
 RECRUITER_EMAIL='team@stirringminds.com'
 PROFILE_FIELDS = {
@@ -98,8 +99,9 @@ class WorkspaceApp(WorkspaceFeatures, InterviewRelease):
         with self.store.db() as db:row=db.execute('SELECT data,version FROM workspace_profiles WHERE user_id=?',(u['id'],)).fetchone()
         role='recruiter' if u['admin'] else 'candidate'
         data=json.loads(row['data']) if row else {}
-        return {'role':role,'email':u['email'],'version':row['version'] if row else 0,
-                'fields':{k:data.get(k,u['name'] if k=='name' else '') for k in PROFILE_FIELDS[role]}}
+        fields={k:data.get(k,u['name'] if k=='name' else '') for k in PROFILE_FIELDS[role]}
+        if role=='candidate':fields=compatibility_fields(data,fields)
+        return {'role':role,'email':u['email'],'version':row['version'] if row else 0,'fields':fields}
 
     def save_profile(self,u,body):
         role='recruiter' if u['admin'] else 'candidate'
@@ -109,20 +111,26 @@ class WorkspaceApp(WorkspaceFeatures, InterviewRelease):
         with self.lock:
             old=self.get_profile(u)
             if body['version']!=old['version']:raise APIError(409,'Profile changed. Reload before saving.')
-            updated=dict(old['fields'])
+            # Preserve structured sections and original legacy text; never write
+            # the read-only compatibility projection back over stored values.
+            with self.store.db() as db:raw=db.execute('SELECT data FROM workspace_profiles WHERE user_id=?',(u['id'],)).fetchone()
+            updated=json.loads(raw['data']) if raw else {'name':u['name']}
             for key,value in fields.items():
                 if not isinstance(value,str) or len(value)>PROFILE_FIELDS[role][key]:raise APIError(400,'Profile field is invalid or too long.')
                 if key=='name' and len(value.strip())<2:raise APIError(400,'Enter your name.')
                 if key=='resume_url' and value:
                     parsed=urlsplit(value)
                     if parsed.scheme!='https' or not parsed.netloc or parsed.username or parsed.password:raise APIError(400,'Use an HTTPS resume link without credentials.')
+                if role=='candidate' and key in updated.get('_candidate_sections',{}):
+                    if value==old['fields'][key]:continue
+                    raise APIError(409,'Edit this structured section from My Profile; existing entries were preserved.')
                 updated[key]=value.strip()
             with self.store.db() as db:
                 row=db.execute('INSERT INTO workspace_profiles(user_id,data,version) VALUES (?,?,1) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data,version=workspace_profiles.version+1 WHERE workspace_profiles.version=? RETURNING version',
                     (u['id'],json.dumps(updated),old['version'])).fetchone()
                 if not row:raise APIError(409,'Profile changed. Reload before saving.')
-                db.execute('UPDATE users SET name=? WHERE id=?',(updated['name'],u['id']))
-        return self.get_profile({**u,'name':updated['name']})
+                db.execute('UPDATE users SET name=? WHERE id=?',(updated.get('name',u['name']),u['id']))
+        return self.get_profile({**u,'name':updated.get('name',u['name'])})
 
     def candidate_apps(self,u):
         with self.store.db() as db:ids=[r['id'] for r in db.execute('SELECT id FROM applications WHERE user_id=?',(u['id'],))]
@@ -130,6 +138,7 @@ class WorkspaceApp(WorkspaceFeatures, InterviewRelease):
 
     def route(self,env,body):
         path=env.get('PATH_INFO','');method=env.get('REQUEST_METHOD')
+        if path==CANDIDATE_PROFILE_PATH:return candidate_profile_route(self,env,body)
         if path in ('/api/login','/api/register'):raise APIError(410,'Choose Candidate or Recruiter before signing in.')
         match=re.fullmatch(r'/api/auth/(candidate|recruiter)/(login|signup|google)',path)
         if match:
