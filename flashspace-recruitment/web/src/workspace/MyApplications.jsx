@@ -16,7 +16,7 @@ export default function MyApplications(){
  const mounted=useRef(false),lock=useRef(false),actionController=useRef(null);
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;actionController.current?.abort();};},[]);
  useEffect(()=>{let alive=true;const c=new AbortController();setLoading(true);setError('');setNotice('');setRows(null);setSelectedId(null);
-  async function load(){try{const user=await applicationsRequest('/me',{signal:c.signal});if(!alive)return;if(!candidateIdentity(user)){setAccess('denied');return;}setAccess('allowed');const result=applicationsView(await applicationsRequest('/workspace/candidate/applications',{signal:c.signal}));if(alive)setRows(result);}
+  async function load(){try{const user=await applicationsRequest('/me',{signal:c.signal});if(!alive)return;if(!candidateIdentity(user)){setAccess('denied');return;}setAccess('allowed');const result=applicationsView(await applicationsRequest('/workspace/candidate/applications',{signal:c.signal}));if(alive){setRows(result);const linked=new URLSearchParams(window.location.search).get('application');if(linked){if(result.some(a=>a.id===linked))setSelectedId(linked);else setNotice('This application is not available in your account.');}}}
   catch(e){if(alive){setError(e.message);setAccess(current=>e.status===401||e.status===403?'denied':current==='allowed'?'allowed':'error');}}
   finally{if(alive)setLoading(false);}}
   load();return()=>{alive=false;c.abort();};
