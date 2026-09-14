@@ -79,13 +79,25 @@ class WorkspaceApp(WorkspaceFeatures, InterviewRelease):
                 found=db.execute('SELECT * FROM users WHERE LOWER(TRIM(email))=?',(email,)).fetchone()
                 u=dict(found) if found else None
             if action=='signup':
-                if set(body)-{'email','password','confirm_password','name'}:raise APIError(400,'Unsupported signup fields.')
+                if set(body)-{'email','password','confirm_password','name','phone'}:raise APIError(400,'Unsupported signup fields.')
                 if body.get('confirm_password')!=password:raise APIError(400,'Passwords do not match.')
                 if u or email==self.recruiter_email():raise APIError(409,'This email is unavailable for candidate registration.')
                 name=text(body,'name',2,100)
+                phone=body.get('phone','')
+                if phone=='' :phone=None
+                elif not isinstance(phone,str) or not re.fullmatch(r'\d{10}',phone):raise APIError(400,'Enter a 10-digit phone number, or leave it empty.')
                 u={'id':str(uuid.uuid4()),'email':email,'name':name,'admin':0}
                 with self.store.db() as db:
                     db.execute('INSERT INTO users VALUES (?,?,?,?,0,?)',(u['id'],email,name,hash_password(password),now()))
+                if phone:
+                    with self.store.db() as db:
+                        row=db.execute('SELECT data FROM workspace_profiles WHERE user_id=?',(u['id'],)).fetchone()
+                    data=json.loads(row['data']) if row else {}
+                    data.setdefault('personal',{})['phone']=phone
+                    data['phone']=phone
+                    encoded=json.dumps(data,ensure_ascii=False)
+                    with self.store.db() as db:
+                        db.execute('INSERT INTO workspace_profiles(user_id,data,version) VALUES (?,?,1) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data,version=workspace_profiles.version+1',(u['id'],encoded))
             else:
                 valid=verify_password(password,u['password']) if u else False
                 if not u:hash_password(password)
