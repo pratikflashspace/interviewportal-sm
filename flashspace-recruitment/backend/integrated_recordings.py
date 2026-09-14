@@ -38,11 +38,17 @@ class RecordingStore:
             except (ValueError,OSError,KeyError):continue
         return sorted(result,key=lambda m:m['created_at'])
     def create(self,aid,uid,mime):
+        # Voice-only interviews: historic recordings remain readable, but this
+        # release does not start new audio/video capture.
+        raise APIError(409,'Voice-only interviews: new recording capture is not available. Historic recordings remain reviewable.')
+    def create_legacy(self,aid,uid,mime):
+        """Register a pre-existing (historic) recording manifest without capture.
+
+        Used for already-uploaded recordings from earlier pilots so they stay
+        reviewable. Not reachable from any HTTP route.
+        """
         if mime not in ('video/webm','video/mp4'):raise APIError(400,'Unsupported recording format.')
         with self.lock:
-            if any(m['status']=='uploading' for m in self.all(aid)):
-                raise APIError(409,'This interview has an unfinished recording. Ask the recruiter to review it before starting another recording.')
-            if sum(p.is_dir() for p in self.root.iterdir())>=MAX_FILES:raise APIError(409,'Temporary recording capacity reached. Do not start capture; ask the recruiter to download and remove a copy.')
             rid=uuid.uuid4().hex;self.path(rid).mkdir(mode=0o700)
             m={'id':rid,'application_id':aid,'owner':uid,'mime':mime,'status':'uploading','bytes':0,'chunks':[],
                'created_at':now(),'consent':'integrated-interview-av-v1','temporary':True}
@@ -92,6 +98,7 @@ class IntegratedApp(ConversationalApp):
     def metadata(m):return {k:v for k,v in m.items() if k not in ('owner','chunks')}
     def route(self,env,body):
         path=env.get('PATH_INFO','');method=env.get('REQUEST_METHOD')
+        # Historic recordings stay reviewable; new capture routes are closed.
         match=re.fullmatch(r'/api/v2/applications/([\w-]+)/recording',path)
         if match:
             user=self.current_user(env);aid=match[1]
@@ -99,11 +106,7 @@ class IntegratedApp(ConversationalApp):
                 a=self.store.get(aid);f=self.flow(aid)
                 if a['user_id']!=user['id'] or not f:raise APIError(404,'Interview not found.')
                 if method!='POST':raise APIError(405,'POST required.')
-                if f['status']!='interview' or not f['active']:raise APIError(409,'This interview is not ready to start recording.')
-                if body.get('consent')!='integrated-interview-av-v1':raise APIError(400,'Explicit audio/video recording consent is required.')
-                self.store.quota('capture:'+user['id'],20,3600)
-                m=self.recordings.create(aid,user['id'],body.get('mime'))
-                return {**self.metadata(m),'max_bytes':MAX_BYTES,'max_seconds':1800},[]
+                raise APIError(409,'Voice-only interviews: recording capture is not part of this interview flow.')
         match=re.fullmatch(r'/api/admin/applications/([\w-]+)/recordings',path)
         if match and method=='GET':
             user=self.current_user(env)
@@ -136,7 +139,7 @@ class IntegratedApp(ConversationalApp):
     def __call__(self,env,start_response):
         def headers(status,items):
             items=[(k,v) for k,v in items if k.lower()!='permissions-policy']
-            start_response(status,items+[('Permissions-Policy','camera=(self), microphone=(self)')])
+            start_response(status,items+[('Permissions-Policy','camera=(), microphone=(self)')])
         match=re.fullmatch(r'/api/recordings/([a-f0-9]{32})/(chunk/(\d+)|media)',env.get('PATH_INFO',''))
         if not match:return super().__call__(env,headers)
         try:

@@ -1,14 +1,14 @@
 // Local preview only: no MediaRecorder, provider connection, upload or API calls.
+// Voice-only interviews: microphone check with no camera capture.
 export class DeviceCheck {
- constructor({devices=globalThis.navigator?.mediaDevices,Context=globalThis.AudioContext,Recorder=globalThis.MediaRecorder}={}){Object.assign(this,{devices,Context,Recorder});this.generation=0;}
+ constructor({devices=globalThis.navigator?.mediaDevices,Context=globalThis.AudioContext}={}){Object.assign(this,{devices,Context});this.generation=0;}
  async open(){
   await this.close();const generation=++this.generation;let stream,context;
   try{
-   if(!this.devices?.getUserMedia||!this.Context||!this.Recorder)throw Error('This browser does not support the interview devices.');
-   if(!['video/webm;codecs=vp8,opus','video/webm','video/mp4'].some(m=>this.Recorder.isTypeSupported(m)))throw Error('No supported recording format.');
-   stream=await this.devices.getUserMedia({video:{width:{ideal:640},height:{ideal:480}},audio:{echoCancellation:true,noiseSuppression:true,channelCount:1}});
+   if(!this.devices?.getUserMedia||!this.Context)throw Error('This browser does not support the interview microphone.');
+   stream=await this.devices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,channelCount:1}});
    if(generation!==this.generation)throw Error('Device check cancelled.');
-   if(!stream.getVideoTracks().length||!stream.getAudioTracks().length)throw Error('Camera and microphone are both required.');
+   if(!stream.getAudioTracks().length)throw Error('A microphone is required for this voice interview.');
    context=new this.Context({sampleRate:16000});await context.resume();
    if(generation!==this.generation)throw Error('Device check cancelled.');
    if(context.sampleRate!==16000)throw Error('This browser cannot provide the required audio format.');

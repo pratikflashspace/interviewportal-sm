@@ -4,8 +4,8 @@ ROOT=Path(__file__).resolve().parents[1]
 class FocusedRoomTests(unittest.TestCase):
  def test_approved_layout_and_no_removed_controls(self):
   source=(ROOT/'web/src/v2/IntegratedInterview.jsx').read_text()
-  for text in ('Pause interview','Use typing alternative','Reload saved state','Saved questions and answers','10 core questions','setRevealed(null)','setTyping('):self.assertNotIn(text,source)
-  for text in ('room-participants','room-question','Begin interview','Check camera and microphone','I heard the test sound','micDetected','cameraConfirmed','disclosure.qid===flow?.active?.id'):self.assertIn(text,source)
+  for text in ('Pause interview','Use typing alternative','Reload saved state','Saved questions and answers','10 core questions','setRevealed(null)','setTyping(','getUserMedia({video','<video'):self.assertNotIn(text,source)
+  for text in ('room-participants','room-question','Begin interview','Check your microphone','I heard the test sound','micDetected','disclosure.qid===flow?.active?.id'):self.assertIn(text,source)
   self.assertIn("played.current.set(f.active.id,count)",source)
  def test_question_markup_never_contains_hidden_full_copy(self):
   source=(ROOT/'web/src/v2/spoken-question.jsx').read_text()

@@ -20,7 +20,8 @@
 .focused-room .room-interviewer>h2{align-self:flex-start}
 .focused-room .room-interviewer>.voice-viz{flex:1;align-self:stretch;justify-content:center;min-height:160px}
 .focused-room .room-interviewer>p{font-size:14px;color:var(--room-muted);margin:12px 0 0}
-.focused-room .room-candidate video{display:block;width:100%;height:clamp(180px,23vw,290px);object-fit:contain;border-radius:12px;background:var(--room-ink)}
+/* Voice-only: the candidate panel shows the same instrument as the interviewer. */
+.focused-room .room-candidate .voice-viz{flex:1;align-self:stretch;justify-content:center;min-height:160px}
 .focused-room .room-candidate p{font-size:14px;color:var(--room-muted);margin:12px 0 0}
 .focused-room .voice-viz{display:flex;align-items:center;gap:10px;max-width:100%;min-width:0;opacity:1}
 .focused-room .voice-viz-bars{display:flex;align-items:center;justify-content:center;gap:clamp(2px,.4vw,5px);height:100px;min-width:0;max-width:100%}
@@ -31,6 +32,7 @@
 /* The central state already says who is speaking. Avoid a duplicate beside
    the interviewer waveform; this is presentational, not a hidden question. */
 .focused-room .room-interviewer .voice-viz-label{display:none}
+.focused-room .room-candidate .voice-viz-label{display:none}
 .focused-room>.voice-viz{justify-content:center;margin:8px auto;max-width:280px}
 .focused-room>.voice-viz .voice-viz-bars{height:28px;gap:3px}
 .focused-room>.voice-viz .voice-viz-bars span{width:4px}
@@ -51,7 +53,7 @@
  .focused-room{padding:18px 16px 40px}.focused-room>header{align-items:flex-start;flex-direction:column}.focused-room h1{text-align:left;font-size:27px;margin:24px 0}
  .focused-room .room-participants{gap:12px}.focused-room .room-participants>section{padding:12px;border-radius:12px}.focused-room .room-participants h2{font-size:14px}
  .focused-room .room-interviewer{min-height:180px}.focused-room .room-interviewer>.voice-viz{min-height:100px}.focused-room .room-interviewer .voice-viz-bars{height:64px;gap:2px}.focused-room .room-interviewer .voice-viz-bars span{width:3px}
- .focused-room .room-candidate video{height:150px}.focused-room .room-question{padding:18px;min-height:106px}.focused-room .room-preflight,.focused-room .room-help{padding:18px}.focused-room .room-state{font-size:16px;padding:9px 14px}
+ .focused-room .room-candidate .voice-viz{min-height:100px}.focused-room .room-candidate .voice-viz-bars{height:64px;gap:2px}.focused-room .room-question{padding:18px;min-height:106px}.focused-room .room-preflight,.focused-room .room-help{padding:18px}.focused-room .room-state{font-size:16px;padding:9px 14px}
 }
-@media(max-width:360px){.focused-room .room-participants{grid-template-columns:minmax(0,1fr)}.focused-room .room-candidate video{height:200px}}
+@media(max-width:360px){.focused-room .room-participants{grid-template-columns:minmax(0,1fr)}.focused-room .room-candidate .voice-viz{min-height:140px}}
 @media(prefers-reduced-motion:reduce){.focused-room *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

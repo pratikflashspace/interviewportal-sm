@@ -71,11 +71,8 @@ class JourneyTests(unittest.TestCase):
         self.ok(base+'/intro',{})
         intro=self.provider.spoken[-1].lower()
         for forbidden in ('six','four','pause','typing'):self.assertNotIn(forbidden,intro)
-        self.assertEqual(self.req(base+'/recording',{'mime':'video/webm'})['status'],400)
-        rid=self.ok(base+'/recording',{'mime':'video/webm','consent':'integrated-interview-av-v1'})['id'];media='/api/recordings/'+rid
-        video=b'\x1aE\xdf\xa3'+b'synthetic-video-transport'*20
-        self.ok(media+'/chunk/0',video);self.ok(media+'/chunk/0',video)
-        self.assertEqual(self.req(media+'/chunk/1',video,origin='https://wrong.example')['status'],403)
+        # Voice-only: no new recording capture is permitted in the interview flow.
+        self.assertEqual(self.req(base+'/recording',{'mime':'video/webm','consent':'integrated-interview-av-v1'})['status'],409)
         first=f['active']['id']
         for i in range(3):self.ok(base+'/speech',{'question_id':first})
         self.assertEqual(self.req(base+'/speech',{'question_id':first})['status'],429)
@@ -95,8 +92,6 @@ class JourneyTests(unittest.TestCase):
         self.assertEqual(f['status'],'completed');self.assertEqual(len(f['answers']),10)
         self.assertEqual(sum(a['stage']=='generic' for a in f['answers']),6)
         self.assertEqual(sum(a['stage']=='domain' for a in f['answers']),4)
-        self.ok(media+'/finish',{'chunks':1})
-        self.assertEqual(self.req(media+'/media')['status'],403)
         self.clickup.fail=True;self.clock+=61;self.app.work_once()
         self.assertEqual(self.app.store.get(aid)['sync_status'],'Retry pending')
         self.assertEqual(len(self.app.store.get(aid)['answers']),10)
@@ -104,19 +99,15 @@ class JourneyTests(unittest.TestCase):
         self.assertEqual(self.app.store.get(aid)['sync_status'],'Synced')
         description=self.clickup.payloads[-1]['description']
         self.assertIn('Synthetic response 9',description)
-        self.assertIn('/interview-review?application='+aid,description)
         self.assertIn('No aggregate score assigned',description)
         own=self.ok('/api/applications')[0];self.assertNotIn('evaluation',own)
         self.signup('other@example.com')
         self.assertEqual(self.req(base)['status'],404)
-        self.assertEqual(self.req(media+'/chunk/1',video)['status'],404)
         self.recruiter()
         report=self.ok('/api/admin/v2/reports/'+aid)['report']
         self.assertEqual(report['scoring_status'],'not_scored');self.assertIsNone(report['score'])
         self.assertTrue(all('score' not in c for c in report['criteria']))
-        self.assertEqual(len(self.ok('/api/admin/applications/'+aid+'/recordings')['recordings']),1)
-        self.assertEqual(self.ok(media+'/media'),video)
-        partial=self.req(media+'/media',byte_range='bytes=4-12');self.assertEqual(partial['status'],206);self.assertEqual(partial['body'],video[4:13])
+        self.assertEqual(self.ok('/api/admin/applications/'+aid+'/recordings')['recordings'],[])
         self.ok('/api/workspace/recruiter/applications/'+aid+'/stage',{'version':0,'stage':'shortlisted'})
         self.assertEqual(self.ok('/api/workspace/candidate/applications',cookie=candidate_cookie)[0]['stage'],'shortlisted')
     def test_failed_tts_refunds_replay_and_keeps_draft(self):
