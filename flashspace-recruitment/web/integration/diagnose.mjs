@@ -1,5 +1,4 @@
 // CI-only native worklet regression; no production/provider traffic.
-// Playwright 1.55.1 stalls addModule even on a bare page (upstream #37592).
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {checkGoogleLogin} from './google-login.mjs';
@@ -8,6 +7,7 @@ import {checkExploreJobs} from './explore-jobs.mjs';
 import {checkMyApplications} from './my-applications.mjs';
 import {checkMyInterviews} from './my-interviews.mjs';
 import {checkCandidateProfile} from './candidate-profile.mjs';
+import {checkLayoutCorrection} from './candidate-layout-correction.mjs';
 import {installReportDiagnostics} from './report-diagnostics.mjs';
 if(process.env.GITHUB_ACTIONS==='true'){
  const launch=chromium.launch.bind(chromium);
@@ -15,6 +15,7 @@ if(process.env.GITHUB_ACTIONS==='true'){
   const browser=await launch(...args);let context;
   installReportDiagnostics(browser);
   try{
+   await checkLayoutCorrection(browser);
    await checkCandidateProfile(browser);
    await checkMyInterviews(browser);
    await checkMyApplications(browser);
