@@ -10,6 +10,7 @@ import ExploreJobs from './workspace/ExploreJobs.jsx';
 import MyApplications from './workspace/MyApplications.jsx';
 import MyInterviews from './workspace/MyInterviews.jsx';
 import CandidateProfile from './workspace/CandidateProfile.jsx';
+import CandidateAccount from './workspace/CandidateAccount.jsx';
 import './auth/login-readability.css';
 import './workspace/resume-profile-only.css';
 const path=window.location.pathname.replace(/\/$/,'');
@@ -17,5 +18,5 @@ if(path==='/candidate/workspace/resume'){
  window.location.replace('/candidate/workspace/profile#cp-title-resume');
 }else{
  const loginRole=path==='/candidate/login'?'candidate':path==='/recruiter/login'?'recruiter':null;
- createRoot(document.getElementById('root')).render(path===''?<PublicLanding/>:loginRole?<LoginPage role={loginRole}/>:path==='/interview-v2'?<IntegratedInterview/>:path==='/candidate/workspace/dashboard'?<CandidateDashboard/>:path==='/candidate/workspace/jobs'?<ExploreJobs/>:path==='/candidate/workspace/applications'?<MyApplications/>:path==='/candidate/workspace/interviews'?<MyInterviews/>:path==='/candidate/workspace/profile'?<CandidateProfile/>:<Workspace/>);
+ createRoot(document.getElementById('root')).render(path===''?<PublicLanding/>:loginRole?<LoginPage role={loginRole}/>:path==='/interview-v2'?<IntegratedInterview/>:path==='/candidate/workspace/dashboard'?<CandidateDashboard/>:path==='/candidate/workspace/jobs'?<ExploreJobs/>:path==='/candidate/workspace/applications'?<MyApplications/>:path==='/candidate/workspace/interviews'?<MyInterviews/>:path==='/candidate/workspace/profile'?<CandidateProfile/>:path==='/candidate/workspace/settings'?<CandidateAccount page="settings"/>:path==='/candidate/workspace/help'?<CandidateAccount page="help"/>:<Workspace/>);
 }
