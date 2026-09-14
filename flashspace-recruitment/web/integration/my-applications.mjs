@@ -22,12 +22,12 @@ export async function checkMyApplications(browser){
   assert.equal(await modal.getByText('Date not recorded',{exact:true}).count(),1);
   const text=await modal.innerText();for(const forbidden of ['HIDDEN-ACTOR','HIDDEN-NOTES','Eligibility check','Assessment'])assert.equal(text.includes(forbidden),false);
   for(const width of [390,320]){await page.setViewportSize({width,height:844});const box=await modal.boundingBox();assert(box.x>=0&&box.x+box.width<=width+1);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);}
-  await page.keyboard.press('Escape');await page.getByRole('button',{name:'Clear filters',exact:true}).click();
+  await page.keyboard.press('Escape');await modal.waitFor({state:'hidden'});await page.getByRole('button',{name:'Clear filters',exact:true}).click();
   // A completed update after initial render must block stale continuation.
   rows=[{...active,interview_status:'completed',stage:'under_review'},complete];
   await card('Synthetic Engineering').getByRole('button',{name:'Continue interview',exact:false}).click();await page.getByText('This application cannot be continued. Its latest status is shown.',{exact:true}).waitFor();
   assert.equal(await card('Synthetic Engineering').getByRole('button',{name:'Continue interview',exact:false}).count(),0);
-  await card('Synthetic Engineering').getByRole('button',{name:'View application',exact:true}).click();assert.equal(await page.getByRole('dialog').locator('.ma-timeline li').count(),1,'Inferred review must not create a timeline event');await page.keyboard.press('Escape');
+  await card('Synthetic Engineering').getByRole('button',{name:'View application',exact:true}).click();await modal.waitFor();await modal.getByRole('heading',{name:'Synthetic Engineering',exact:true}).waitFor();assert.equal(await modal.locator('.ma-timeline li').count(),1,'Inferred review must not create a timeline event');await page.keyboard.press('Escape');await modal.waitFor({state:'hidden'});
   rows=[active];await page.getByRole('button',{name:'Refresh applications',exact:true}).click();await page.getByText('1 application found · Newest first',{exact:true}).waitFor();await card('Synthetic Engineering').getByRole('button',{name:'Continue interview',exact:false}).click();await page.waitForURL('**/interview-v2?application=active');
   rows=[];await open();await page.getByRole('heading',{name:'No applications yet',exact:true}).waitFor();assert.equal(await page.getByRole('link',{name:'Explore Jobs →',exact:true}).getAttribute('href'),'/candidate/workspace/jobs');
   fail=true;await page.getByRole('button',{name:'Refresh applications',exact:true}).click();await page.getByRole('alert').waitFor();assert.equal(await page.getByRole('heading',{name:'No applications yet',exact:true}).count(),0);
