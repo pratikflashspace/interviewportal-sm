@@ -13,6 +13,7 @@ export async function checkCandidateProfile(browser){
   const get=async()=>{const r=await context.request.get(origin+endpoint);assert.equal(r.status(),200);return r.json();};
   const edit=title=>page.getByRole('button',{name:'Edit '+title,exact:true}).click();
   const save=async()=>{await page.getByRole('button',{name:'Save profile',exact:true}).click();await page.getByRole('status').filter({hasText:'Profile saved.'}).waitFor();};
+  const summary=()=>page.getByRole('textbox',{name:'Professional summary',exact:true});
   await open();await page.getByLabel('Login email',{exact:true}).waitFor();assert.equal(await page.getByLabel('Login email',{exact:true}).getAttribute('readonly'),'');assert.equal(await page.locator('a[href*="recruiter"]').count(),0);
   assert.equal(await page.locator('.cp-legacy p').textContent(),legacy);
   await edit('Personal details');await page.getByLabel('Full name *',{exact:true}).fill('Updated Profile Candidate');await page.getByLabel('Current city',{exact:true}).fill('Delhi');await page.getByLabel('Professional headline',{exact:true}).fill('Python developer');await save();
@@ -24,15 +25,13 @@ export async function checkCandidateProfile(browser){
   await edit('Skills');await page.getByLabel('Add a skill',{exact:true}).fill('Python');await page.getByRole('button',{name:'Add skill',exact:true}).click();await save();assert.deepEqual((await get()).sections.skills.items,['Python']);
   await edit('Portfolio and professional links');await page.getByLabel('Portfolio website',{exact:true}).fill('https://example.com/portfolio');await save();
   await edit('Resume link');await page.getByLabel('Resume link (HTTPS)',{exact:true}).fill('https://example.com/resume');await save();assert.equal(await page.locator('input[type=file]').count(),0);
-  // Draft remains after a failed write, no fake success; retry uses same version.
-  await edit('Professional summary');await page.getByLabel('Professional summary',{exact:true}).fill('Unsaved retry draft');
+  await edit('Professional summary');await summary().fill('Unsaved retry draft');
   const outage=route=>route.request().method()==='POST'?route.fulfill({status:503,json:{error:'synthetic outage'}}):route.continue();
-  await page.route('**/api/workspace/candidate/profile',outage);await page.getByRole('button',{name:'Save profile',exact:true}).click();await page.getByRole('alert').waitFor();assert.equal(await page.getByLabel('Professional summary',{exact:true}).inputValue(),'Unsaved retry draft');assert.equal(await page.getByText('Profile saved.',{exact:true}).count(),0);
+  await page.route('**/api/workspace/candidate/profile',outage);await page.getByRole('button',{name:'Save profile',exact:true}).click();await page.getByRole('alert').waitFor();assert.equal(await summary().inputValue(),'Unsaved retry draft');assert.equal(await page.getByText('Profile saved.',{exact:true}).count(),0);
   await page.unroute('**/api/workspace/candidate/profile',outage);await save();assert.equal((await get()).sections.summary.summary,'Unsaved retry draft');
-  // Version conflict must not replace local input without explicit action.
-  await edit('Professional summary');await page.getByLabel('Professional summary',{exact:true}).fill('Local conflicting draft');const snapshot=await get();const external=await context.request.post(origin+endpoint,{headers,data:{version:snapshot.version,section:'summary',value:{summary:'Other session value'}}});assert.equal(external.status(),200);
-  await page.getByRole('button',{name:'Save profile',exact:true}).click();await page.getByRole('alert').waitFor();assert.equal(await page.getByLabel('Professional summary',{exact:true}).inputValue(),'Local conflicting draft');assert.equal(await page.getByRole('button',{name:'Save profile',exact:true}).isDisabled(),true);
-  await page.getByRole('button',{name:'Review latest saved section',exact:true}).click();await page.getByRole('button',{name:'Use latest saved section',exact:true}).click();assert.equal(await page.getByLabel('Professional summary',{exact:true}).inputValue(),'Other session value');await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await edit('Professional summary');await summary().fill('Local conflicting draft');const snapshot=await get();const external=await context.request.post(origin+endpoint,{headers,data:{version:snapshot.version,section:'summary',value:{summary:'Other session value'}}});assert.equal(external.status(),200);
+  await page.getByRole('button',{name:'Save profile',exact:true}).click();await page.getByRole('alert').waitFor();assert.equal(await summary().inputValue(),'Local conflicting draft');assert.equal(await page.getByRole('button',{name:'Save profile',exact:true}).isDisabled(),true);
+  await page.getByRole('button',{name:'Review latest saved section',exact:true}).click();await page.getByRole('button',{name:'Use latest saved section',exact:true}).click();assert.equal(await summary().inputValue(),'Other session value');await page.getByRole('button',{name:'Cancel',exact:true}).click();
   await page.reload();await page.getByText('Other session value',{exact:true}).waitFor();assert.equal(await page.locator('.cp-legacy p').textContent(),legacy);
   await edit('Projects');await page.getByRole('button',{name:'Remove entry 1',exact:true}).click();await save();assert.equal((await get()).sections.projects.items.length,0);
   for(const width of [390,320]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'Profile fits '+width);}
