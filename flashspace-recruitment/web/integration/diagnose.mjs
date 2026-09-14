@@ -1,6 +1,7 @@
 // CI-only native worklet regression; no production/provider traffic.
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
+import {checkPublicLanding} from './public-landing.mjs';
 import {checkGoogleLogin} from './google-login.mjs';
 import {checkCandidateDashboard} from './candidate-dashboard.mjs';
 import {checkExploreJobs} from './explore-jobs.mjs';
@@ -15,6 +16,7 @@ if(process.env.GITHUB_ACTIONS==='true'){
   const browser=await launch(...args);let context;
   installReportDiagnostics(browser);
   try{
+   await checkPublicLanding(browser);
    await checkLayoutCorrection(browser);
    await checkCandidateProfile(browser);
    await checkMyInterviews(browser);
