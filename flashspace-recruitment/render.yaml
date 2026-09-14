@@ -30,6 +30,8 @@ services:
         sync: false
       - key: CLICKUP_FOLDER_ID
         sync: false
+      - key: CLICKUP_CANDIDATE_FOLDER_ID
+        sync: false
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD

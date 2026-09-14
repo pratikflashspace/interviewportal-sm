@@ -154,6 +154,16 @@ class ClickUp:
 class _ReportDone(Exception):
     """Internal control flow: pending report job needs no further work."""
 
+
+def _clickup_sync(self, a):
+    """Route sync through the per-candidate integration when it is active."""
+    clickup = self.clickup
+    if type(clickup).__name__ == 'CandidateFolderClickUp' or clickup.__class__.__name__ == 'CandidateFolderClickUp':
+        # Import lazily: server is imported by candidate_clickup's ancestors.
+        from .candidate_clickup import CandidateFolderClickUp
+        return clickup.sync(a, app=self)
+    return clickup.sync(a)
+
 class Store:
     def __init__(self,path): self.path=path;Path(path).parent.mkdir(parents=True,exist_ok=True)
     @contextmanager
@@ -281,7 +291,7 @@ class App:
                         except Exception as e:
                             evaluation_error = e
                     version=a['version']
-                self.clickup.sync(a)
+                _clickup_sync(self, a)
                 # The transcript is now durably in ClickUp. A failed report must not
                 # hold the sync state hostage: mark this version synced, and keep a
                 # separate durable pending-report job so the report is retried
@@ -317,7 +327,7 @@ class App:
                     a['evaluation']=self.ai.evaluate(a['role_snapshot'],a['answers']);self.store.save(a)
                 # Report arrived after the transcript: push it to the existing
                 # ClickUp task now, without touching sync state or bumping version.
-                self.clickup.sync(a)
+                _clickup_sync(self, a)
             except _ReportDone:
                 pass
             except Exception as e:

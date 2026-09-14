@@ -12,7 +12,7 @@ from test_backend import FakeAI, ROLE
 class WorkspaceTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
-        self.env=patch.dict(os.environ,{'APP_ORIGIN':'https://test.example'})
+        self.env=patch.dict(os.environ,{'APP_ORIGIN':'https://test.example','CLICKUP_CANDIDATE_FOLDER_ID':'901612030752'})
         self.env.start();self.addCleanup(self.env.stop)
         self.app=WorkspaceApp(db_path=self.tmp.name+'/test.db',roles=[ROLE],ai=FakeAI(),start_worker=False,recording_root=self.tmp.name+'/recordings')
         self.cookie=''

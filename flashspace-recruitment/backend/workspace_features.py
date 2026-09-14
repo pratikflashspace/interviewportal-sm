@@ -18,7 +18,11 @@ class WorkspaceFeatures:
             db.execute('CREATE TABLE IF NOT EXISTS workspace_support (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), subject TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL, reply TEXT NOT NULL, created TEXT NOT NULL)')
         # Replace only the default workspace integration; preserve injected test
         # doubles/custom integrations. Legacy non-workspace runtimes unchanged.
-        if type(self.clickup) is InterviewRecordingClickUp:self.clickup=WorkspaceClickUp(self.store)
+        # Per-candidate structure (approved 14 Sep 2026): one List per candidate
+        # with a Profile task and one Interview task per applied role.
+        if type(self.clickup) is InterviewRecordingClickUp:
+            from .candidate_clickup import CandidateFolderClickUp
+            self.clickup = CandidateFolderClickUp(self.store)
 
     def record(self,key,default):
         with self.store.db() as db:row=db.execute('SELECT data,version FROM workspace_records WHERE key=?',(key,)).fetchone()
