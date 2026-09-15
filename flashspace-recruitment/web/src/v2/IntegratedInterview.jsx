@@ -1,6 +1,8 @@
 // Approved Teamrecrut room: AI interviewer and candidate waveforms side by side.
 // Voice-only: microphone check, one Begin, no camera, no recording UI.
-// Keep Manrope/Hind + violet/lilac. No per-answer recording, pause or typing UI.
+// Button-driven turns: the microphone only listens after "Tap to speak" and
+// closes at "I'm done speaking", so background noise can never interrupt the
+// interviewer, and each answer ends on the candidate's explicit signal.
 import React,{useEffect,useRef,useState} from 'react';
 import {TurnController} from './turn-controller.mjs';
 import {InterviewVoice} from './interview-capture.mjs';
@@ -17,19 +19,23 @@ async function api(path,body,raw=false){
  try{const r=await fetch('/api'+path,{credentials:'same-origin',signal:controller.signal,method:body?'POST':'GET',headers:{'X-Requested-With':'Flashspace',...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});if(!r.ok){let e;try{e=await r.json();}catch{}throw Error(e?.error||'Request failed. Your interview needs technical support.');}return raw?await r.blob():await r.json();}finally{clearTimeout(timeout);}
 }
 export default function IntegratedInterview(){
- const [user,setUser]=useState(undefined),[flow,setFlow]=useState(null),[consent,setConsent]=useState(false),[status,setStatus]=useState('ready'),[error,setError]=useState(''),[text,setText]=useState(''),[voiceState,setVoiceState]=useState('idle'),[busy,setBusy]=useState(false),[draftStatus,setDraftStatus]=useState(''),[disclosure,setDisclosure]=useState({qid:null,count:0}),[started,setStarted]=useState(false),[help,setHelp]=useState(false),[devicesReady,setDevicesReady]=useState(false),[micDetected,setMicDetected]=useState(false);
- const current=useRef(null),voice=useRef(null),speech=useRef(null),closing=useRef(Promise.resolve()),ctl=useRef(new TurnController()),epoch=useRef(0),paused=useRef(true),checking=useRef(false),saving=useRef(false),audio=useRef(null),timer=useRef(null),nextCheck=useRef(0),mounted=useRef(true),segmentBase=useRef(1),drafts=useRef(new DraftClient(api)),draftOwner=useRef(null),continuation=useRef(null),startGuard=useRef(false),preflight=useRef(new DeviceCheck()),deviceTimer=useRef(null),played=useRef(new Map());
+ const [user,setUser]=useState(undefined),[flow,setFlow]=useState(null),[consent,setConsent]=useState(false),[status,setStatus]=useState('ready'),[error,setError]=useState(''),[text,setText]=useState(''),[voiceState,setVoiceState]=useState('idle'),[busy,setBusy]=useState(false),[draftStatus,setDraftStatus]=useState(''),[disclosure,setDisclosure]=useState({qid:null,count:0}),[started,setStarted]=useState(false),[help,setHelp]=useState(false),[devicesReady,setDevicesReady]=useState(false),[micDetected,setMicDetected]=useState(false),[focusNote,setFocusNote]=useState('');
+ const current=useRef(null),voice=useRef(null),speech=useRef(null),closing=useRef(Promise.resolve()),ctl=useRef(new TurnController()),epoch=useRef(0),paused=useRef(true),saving=useRef(false),audio=useRef(null),mounted=useRef(true),segmentBase=useRef(1),drafts=useRef(new DraftClient(api)),draftOwner=useRef(null),startGuard=useRef(false),preflight=useRef(new DeviceCheck()),deviceTimer=useRef(null),played=useRef(new Map()),focusLoss=useRef(0);
  useEffect(()=>{mounted.current=true;(async()=>{try{const u=await api('/me');if(!mounted.current)return;setUser(u);if(!u||u.admin)return;const aid=new URLSearchParams(location.search).get('application');if(!aid){setError('Open an interview from My Applications.');return;}const f=await api('/v2/applications/'+encodeURIComponent(aid));if(!mounted.current)return;current.current=f;setFlow(f);await restore(f);await allowance(f);setStatus(f.status==='completed'?'answers-completed':'ready');}catch(e){if(mounted.current)setError(e.message);}})();
  const unload=e=>{if(voice.current?.state==='live'){e.preventDefault();e.returnValue='Interview audio is active.';}};
  window.addEventListener('beforeunload',unload);
- return()=>{mounted.current=false;paused.current=true;epoch.current++;clearInterval(timer.current);clearInterval(deviceTimer.current);preflight.current.close();closeSpeech();stopAudio();voice.current?.stop();drafts.current.invalidate();window.removeEventListener('beforeunload',unload);};},[]);
- useEffect(()=>{const f=current.current;if(!f?.active||draftOwner.current!==f.active.id||saving.current||continuation.current||text.length>6000)return;let cancelled=false;const t=setTimeout(async()=>{if(draftOwner.current!==f.active.id||saving.current)return;setDraftStatus('Saving draft…');try{const r=await drafts.current.save(f.application_id,f.active.id,text);if(!cancelled&&r)setDraftStatus('Draft saved; not yet submitted.');}catch(e){if(!cancelled){setDraftStatus('Draft not saved. Keep this tab open.');stopWithError(e.message);}}},1000);return()=>{cancelled=true;clearTimeout(t);};},[text,flow?.active?.id]);
- function paint(){if(mounted.current){setStatus(ctl.current.state);setText(ctl.current.transcript());}}
+ return()=>{mounted.current=false;paused.current=true;epoch.current++;clearInterval(deviceTimer.current);preflight.current.close();closeSpeech();stopAudio();voice.current?.stop();drafts.current.invalidate();window.removeEventListener('beforeunload',unload);};},[]);
+ useEffect(()=>{const f=current.current;if(!f?.active||draftOwner.current!==f.active.id||saving.current||text.length>6000)return;let cancelled=false;const t=setTimeout(async()=>{if(draftOwner.current!==f.active.id||saving.current)return;setDraftStatus('Saving draft…');try{const r=await drafts.current.save(f.application_id,f.active.id,text);if(!cancelled&&r)setDraftStatus('Draft saved; not yet submitted.');}catch(e){if(!cancelled){setDraftStatus('Draft not saved. Keep this tab open.');stopWithError(e.message);}}},1000);return()=>{cancelled=true;clearTimeout(t);};},[text,flow?.active?.id]);
+ useEffect(()=>{const count=()=>{if(started&&flow&&flow.status!=='completed'&&status!=='technical-stop'){focusLoss.current++;setFocusNote('Leaving or switching away from this window is recorded and shared with the hiring team.');}};
+  const onVisibility=()=>{if(document.hidden)count();};
+  document.addEventListener('visibilitychange',onVisibility);window.addEventListener('blur',count);
+  return()=>{document.removeEventListener('visibilitychange',onVisibility);window.removeEventListener('blur',count);};},[started,flow,status]);
+ function paint(){if(mounted.current)setText(ctl.current.transcript());}
  function stopAudio(){const a=audio.current;audio.current=null;if(a){a.stopReveal?.();a.player.onended=null;a.player.onerror=null;a.player.pause();a.disconnect();URL.revokeObjectURL(a.url);a.resolve(false);}}
  function closeSpeech(){const s=speech.current;speech.current=null;if(!s)return closing.current;s.processor.port.onmessage=null;s.processor.disconnect();s.input.disconnect();s.silent.disconnect();s.socket.onmessage=null;s.socket.onerror=null;s.socket.onclose=null;s.cancel?.();closing.current=new Promise(resolve=>{if(s.socket.readyState===3)return resolve();const t=setTimeout(resolve,5500);s.socket.onclose=()=>{clearTimeout(t);resolve();};s.socket.close();});return closing.current;}
- function stopWithError(message){paused.current=true;epoch.current++;ctl.current.pause();stopAudio();voice.current?.stop();closeSpeech();clearInterval(timer.current);if(mounted.current){setStatus('technical-stop');setError(message);}}
+ function stopWithError(message){paused.current=true;epoch.current++;ctl.current.pause();stopAudio();voice.current?.stop();closeSpeech();if(mounted.current){setStatus('technical-stop');setError(message);}}
  async function allowance(f=current.current){if(!f?.active){return null;}return api('/v2/applications/'+f.application_id+'/playback');}
- async function restore(f){draftOwner.current=null;drafts.current.invalidate();if(mounted.current)setDisclosure({qid:f.active?.id,count:played.current.get(f.active?.id)||0});ctl.current.begin();ctl.current.pause();continuation.current=null;if(f.active){const d=await drafts.current.load(f.application_id,f.active.id);if(d?.transcript)ctl.current.segments.set(0,d.transcript);draftOwner.current=f.active.id;if(mounted.current){setText(d?.transcript||'');setDraftStatus(d?.transcript?'Saved draft restored.':'');}}else if(mounted.current)setText('');}
+ async function restore(f){draftOwner.current=null;drafts.current.invalidate();if(mounted.current)setDisclosure({qid:f.active?.id,count:played.current.get(f.active?.id)||0});ctl.current.begin();ctl.current.pause();if(f.active){const d=await drafts.current.load(f.application_id,f.active.id);if(d?.transcript)ctl.current.segments.set(0,d.transcript);draftOwner.current=f.active.id;if(mounted.current){setText(d?.transcript||'');setDraftStatus(d?.transcript?'Saved draft restored.':'');}}else if(mounted.current)setText('');}
  async function checkDevices(){setBusy(true);setError('');setDevicesReady(false);setMicDetected(false);clearInterval(deviceTimer.current);try{const stream=await preflight.current.open();if(!mounted.current)return;setDevicesReady(true);deviceTimer.current=setInterval(()=>{if(preflight.current.level()>.015)setMicDetected(true);},100);stream.getTracks().forEach(t=>t.onended=()=>{setDevicesReady(false);setError('The microphone disconnected. Run device checks again.');});}catch(e){if(mounted.current)setError(e.message);}finally{if(mounted.current)setBusy(false);}}
  function retryable(e){e.retryable=true;return e;}
  async function connectSpeech(){for(let attempt=0;;attempt++){try{return await openSpeech();}catch(e){if(!e.retryable||attempt>=2||paused.current)throw e;await closeSpeech();await new Promise(r=>setTimeout(r,400*(attempt+1)));if(paused.current)throw Error('Listening cancelled.');}}}
@@ -42,9 +48,9 @@ export default function IntegratedInterview(){
   let live=false;
   await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(retryable(Error('Voice connection timed out.'))),20000);state.cancel=()=>{clearTimeout(t);reject(Error('Listening cancelled.'));};
    socket.onmessage=e=>{if(run!==epoch.current)return;let msg;try{msg=JSON.parse(e.data);}catch{return;}if(msg.event==='ready'){clearTimeout(t);state.cancel=null;live=true;resolve();return;}if(msg.event==='error'){clearTimeout(t);reject(Error(msg.message));stopWithError(msg.message);return;}if(paused.current)return;const index=base+msg.utterance_idx;
-    if(msg.event==='vad.speech_start'){ctl.current.speechStart(index);stopAudio();}
+    if(msg.event==='vad.speech_start')ctl.current.speechStart(index);
     if(msg.event==='vad.speech_end')ctl.current.speechEnd();
-    if(msg.event==='transcript.partial'){ctl.current.partial(index);stopAudio();}
+    if(msg.event==='transcript.partial')ctl.current.partial(index);
     if(msg.event==='transcript.final')ctl.current.final(index,msg.text);
     if(ctl.current.transcript().length>6000){stopWithError('Answer exceeds the supported size. No text was silently truncated. Contact support.');return;}paint();
    };
@@ -59,16 +65,16 @@ export default function IntegratedInterview(){
   frame=requestAnimationFrame(step);return()=>cancelAnimationFrame(frame);
  }
  async function speak(introduction=false){
-  const f=current.current,token=ctl.current.epoch,run=epoch.current;setStatus('processing');let blob;
+  const f=current.current,run=epoch.current;setStatus('processing');let blob;
   if(!introduction)setDisclosure({qid:f.active.id,count:0});
   try{blob=await api('/v2/applications/'+f.application_id+(introduction?'/intro':'/speech'),introduction?{}:{question_id:f.active.id},true);}finally{if(!introduction)await allowance();}
-  if(paused.current||run!==epoch.current||!ctl.current.canPlay(token))return false;
+  if(paused.current||run!==epoch.current)return false;
   return new Promise(resolve=>{const url=URL.createObjectURL(blob),player=new Audio(url);let disconnect;try{disconnect=voice.current.routeQuestion(player);}catch(e){URL.revokeObjectURL(url);stopWithError(e.message);resolve(false);return;}
    const stopReveal=introduction?null:trackReveal(player,f.active?.text,f.active?.id);audio.current={player,url,disconnect,resolve,stopReveal};setStatus('ai-speaking');
-   player.onended=()=>{stopReveal?.();disconnect();URL.revokeObjectURL(url);audio.current=null;if(run===epoch.current){if(!introduction){const count=wordsOf(f.active.text).length;played.current.set(f.active.id,count);setDisclosure({qid:f.active.id,count});ctl.current.playbackEnded(token);}paint();}resolve(true);};
+   player.onended=()=>{stopReveal?.();disconnect();URL.revokeObjectURL(url);audio.current=null;if(run===epoch.current&&!introduction){const count=wordsOf(f.active.text).length;played.current.set(f.active.id,count);setDisclosure({qid:f.active.id,count});setStatus('awaiting-tap');}paint();resolve(true);};
    player.onerror=()=>{stopAudio();stopWithError('Question playback failed. Contact support; the interview has not been declared complete.');};player.play().catch(()=>{stopAudio();stopWithError('Browser blocked audio playback. Contact support before restarting.');});});
  }
- function checks(){clearInterval(timer.current);timer.current=setInterval(()=>{if(!paused.current&&!checking.current&&!saving.current&&ctl.current.ready()&&Date.now()>=nextCheck.current)endCheck();},300);}
+ function revealFull(){const q=current.current?.active;if(!q)return;const total=wordsOf(q.text).length;played.current.set(q.id,total);setDisclosure({qid:q.id,count:total});}
  function voiceFactory(){return new InterviewVoice({api,onChange:v=>{if(mounted.current)setVoiceState(v.state);},onFailure:stopWithError});}
  async function begin(){
   if(startGuard.current||saving.current||started||!consent||!devicesReady||!micDetected)return;
@@ -80,44 +86,62 @@ export default function IntegratedInterview(){
    await drafts.current.chain;await restore(f);const prior=ctl.current.transcript();ctl.current.begin();if(prior)ctl.current.segments.set(0,prior);paused.current=false;
    voice.current=voiceFactory();await voice.current.begin();
    if(epoch.current!==run||paused.current){voice.current.stop();throw Error('Start cancelled.');}
-   await connectSpeech();const p=await allowance(f);
-   if(!f.answers.length&&!prior&&p.initial_available){const ok=await speak(true);if(!ok){stopWithError('Introduction was interrupted. Contact support.');return;}await closeSpeech();ctl.current.begin();await connectSpeech();}
-   checks();if(!prior&&p.deliveries_remaining>0)await speak();else{ctl.current.state='listening';paint();}
+   const p=await allowance(f);
+   if(!f.answers.length&&!prior&&p.initial_available){const ok=await speak(true);if(!ok){stopWithError('Introduction was interrupted. Contact support.');return;}}
+   if(!prior&&p.deliveries_remaining>0)await speak();else{revealFull();setStatus('awaiting-tap');}
   }catch(e){stopWithError(e.message);}finally{startGuard.current=false;if(mounted.current)setBusy(false);}
  }
- async function endCheck(){checking.current=true;const token=ctl.current.prepare();if(token===null){checking.current=false;return;}setStatus('processing');const f=current.current;
-  try{if(continuation.current){await commitContinuation(token);return;}const result=await api('/v2/applications/'+f.application_id+'/end-check',{question_id:f.active.id,version:f.version,answer:ctl.current.transcript()});if(paused.current||!ctl.current.canPlay(token))return;if(!result.complete){ctl.current.state='end-pending';nextCheck.current=Date.now()+15000;paint();return;}await submit(ctl.current.transcript(),token);}catch(e){stopWithError(e.message);}finally{checking.current=false;}}
- async function advance(next){
-  continuation.current=null;current.current=next;setFlow(next);await closeSpeech();await restore(next);setText('');
-  if(next.status==='completed'){paused.current=true;epoch.current++;stopAudio();clearInterval(timer.current);await voice.current?.stop();ctl.current.complete();setStatus('completed');return;}
-  if(paused.current){setStatus('technical-stop');await allowance(next);return;}
-  ctl.current.begin();draftOwner.current=next.active.id;await connectSpeech();await allowance(next);await speak();checks();
+ async function tapToSpeak(){
+  if(busy||saving.current||status!=='awaiting-tap')return;
+  setError('');setStatus('processing');const run=epoch.current;
+  try{await connectSpeech();if(paused.current||run!==epoch.current)return;setStatus('listening');}
+  catch(e){stopWithError(e.message);}
  }
- async function commitContinuation(token){const info=continuation.current,answer=ctl.current.transcript();if(!info||saving.current)return;saving.current=true;setBusy(true);try{const f=current.current;if(f.status==='completed')throw Error('Additional final-answer speech needs support review of the saved transcript.');const next=await api('/v2/applications/'+f.application_id+'/continuation',{event_id:info.event_id,version:f.version,answer});current.current=next;setFlow(next);if(paused.current||!ctl.current.canPlay(token)){info.version=next.version;return;}await advance(next);}finally{saving.current=false;setBusy(false);}}
- async function submit(answer,token){
-  if(saving.current||!answer.trim()||answer.length>6000)return;if(continuation.current){await commitContinuation(token);return;}
+ async function doneSpeaking(){
+  if(busy||saving.current||status!=='listening')return;
+  const answer=ctl.current.transcript().trim();
+  if(!answer){setError('No speech was captured yet. Answer out loud, then tap “I’m done speaking”.');return;}
+  setStatus('processing');setBusy(true);
+  try{await closeSpeech();}catch{}
+  if(mounted.current)setBusy(false);
+  submit(answer);
+ }
+ async function submit(answer){
+  if(saving.current||!answer.trim()||answer.length>6000)return;
   const f=current.current,run=epoch.current,event=crypto.randomUUID();saving.current=true;setBusy(true);setStatus('saving');
-  try{await drafts.current.chain;if(paused.current||!ctl.current.canPlay(token)){paint();return;}
-   const next=await api('/v2/applications/'+f.application_id+'/answer',{event_id:event,version:f.version,question_id:f.active.id,answer});current.current=next;setFlow(next);drafts.current.invalidate();draftOwner.current=null;
-   if(!ctl.current.canPlay(token)||ctl.current.transcript()!==answer){continuation.current={event_id:event,version:next.version};setDraftStatus('Waiting for your additional speech to finish.');if(next.status==='completed'){stopWithError('Speech resumed during final submission. Contact support for review; keep this page open.');return;}if(!paused.current){ctl.current.state=ctl.current.speaking?'candidate-speaking':'end-pending';paint();checks();}return;}
-   if(paused.current||run!==epoch.current){await restore(next);setStatus(next.status==='completed'?'answers-completed':'technical-stop');return;}await advance(next);
-  }catch(e){stopWithError(e.message+' Contact support before retrying an uncertain submission.');}finally{saving.current=false;setBusy(false);}
+  try{
+   await drafts.current.chain;
+   const next=await api('/v2/applications/'+f.application_id+'/answer',{event_id:event,version:f.version,question_id:f.active.id,answer,focus_losses:focusLoss.current});
+   current.current=next;setFlow(next);drafts.current.invalidate();draftOwner.current=null;
+   if(paused.current||run!==epoch.current){await restore(next);setStatus(next.status==='completed'?'answers-completed':'technical-stop');return;}
+   await advance(next);
+  }catch(e){stopWithError(e.message+' Contact support before retrying an uncertain submission.');}finally{saving.current=false;if(mounted.current)setBusy(false);}
  }
- async function leave(){if(busy)return;if(!confirm('Exit this interview? Submitted answers stay saved; an unfinished answer is not a submitted answer.'))return;setBusy(true);paused.current=true;epoch.current++;ctl.current.pause();stopAudio();await closeSpeech();clearInterval(timer.current);clearInterval(deviceTimer.current);try{await preflight.current.close();await drafts.current.chain;await voice.current?.stop();location.assign('/candidate/workspace/applications');}catch(e){setError('Could not finish saving: '+e.message);setStatus('technical-stop');}finally{setBusy(false);}}
- const aiSpeaking=status==='ai-speaking',listening=['listening','candidate-speaking','end-pending'].includes(status),done=flow?.status==='completed';
- const label={'ready':'Ready when you are','ai-speaking':'Interviewer is speaking…','candidate-speaking':'Listening to you…','listening':'Listening…','end-pending':'Listening — take your time','processing':'Processing your response…','saving':'Saving your response…','completed':'Interview submitted','answers-completed':'Answers submitted','technical-stop':'Technical interruption'}[status]||'Preparing interview…';
+ async function advance(next){
+  current.current=next;setFlow(next);setText('');focusLoss.current=0;setFocusNote('');
+  if(next.status==='completed'){paused.current=true;epoch.current++;stopAudio();await voice.current?.stop();ctl.current.complete();setStatus('completed');return;}
+  if(paused.current){setStatus('technical-stop');await allowance(next);return;}
+  await restore(next);const p=await allowance(next);
+  if(p.deliveries_remaining>0)await speak();else{revealFull();setStatus('awaiting-tap');}
+ }
+ async function leave(){if(busy)return;if(!confirm('Exit this interview? Submitted answers stay saved; an unfinished answer is not a submitted answer.'))return;setBusy(true);paused.current=true;epoch.current++;ctl.current.pause();stopAudio();await closeSpeech();clearInterval(deviceTimer.current);try{await preflight.current.close();await drafts.current.chain;await voice.current?.stop();location.assign('/candidate/workspace/applications');}catch(e){setError('Could not finish saving: '+e.message);setStatus('technical-stop');}finally{setBusy(false);}}
+ const aiSpeaking=status==='ai-speaking',listening=status==='listening',done=flow?.status==='completed';
+ const label={'ready':'Ready when you are','ai-speaking':'Interviewer is speaking…','awaiting-tap':'Your turn — tap to speak','listening':'Listening… tap “I’m done speaking” when finished','processing':'Processing your response…','saving':'Saving your response…','completed':'Interview submitted','answers-completed':'Answers submitted','technical-stop':'Technical interruption'}[status]||'Preparing interview…';
  const shown=disclosure.qid===flow?.active?.id?disclosure.count:0;
  return <main className="focused-room"><header><a href="/candidate/workspace/applications">teamrecrut · AI Interview</a><div><button onClick={()=>setHelp(!help)}>Help</button><button onClick={leave} disabled={busy}>Exit interview</button></div></header>
- {help&&<section className="room-help"><h2>Interview help</h2><p>Speak naturally and allow time for processing. Short pauses are not treated as completed answers. For a technical problem, use your in-app support inbox. No typing or free-pause mode is available here.</p><p>This is a voice-only interview. Your speech is transcribed by Sarvam for this interview; drafts and submitted answers are saved, and submitted records are sent to ClickUp for authorised human review. No camera is used and no new video is recorded.</p><a href="/candidate/workspace/help" target="_blank" rel="noopener noreferrer">Open Help & Support</a></section>}
+ {help&&<section className="room-help"><h2>Interview help</h2><p>After the interviewer finishes each question, tap “Tap to speak” and answer out loud, then tap “I’m done speaking”. Your speech is transcribed live and saved as you go. Leaving or switching away from this window is recorded and shared with the hiring team. For a technical problem, use your in-app support inbox. No typing mode is available here.</p><p>This is a voice-only interview. Your speech is transcribed by Sarvam for this interview; drafts and submitted answers are saved, and submitted records are sent to ClickUp for authorised human review. No camera is used and no new video is recorded.</p><a href="/candidate/workspace/help" target="_blank" rel="noopener noreferrer">Open Help & Support</a></section>}
  {error&&<p role="alert" className="room-error">{error}</p>}
  {user===undefined?<p>Checking interview access…</p>:!user?<p><a href="/candidate/login">Sign in as a candidate</a>, then open My Interviews.</p>:user.admin?<p>Candidate access is required. <a href="/recruiter/workspace/dashboard">Return to recruiter dashboard</a></p>:!flow?<p><a href="/candidate/workspace/applications">Open an application to enter its interview.</a></p>:<>
  <h1>Your experience, in your words.</h1>
- {!started&&!done&&<section className="room-preflight"><h2>Before you begin</h2><p>This is a voice interview. The interviewer speaks each question aloud — it also appears on screen — and then listens automatically. No camera, no typing. Speak naturally after each question; short pauses are fine.</p><button onClick={checkDevices} disabled={busy}>Check your microphone</button><p role="status">{devicesReady?(micDetected?'Microphone connected · signal detected':'Microphone connected · speak to test'):'Device checks not completed'}</p>
+ {!started&&!done&&<section className="room-preflight"><h2>Before you begin</h2><p>This is a voice interview. The interviewer speaks each question aloud — it also appears on screen. When the question ends, tap “Tap to speak”, answer out loud, then tap “I’m done speaking”. No camera, no typing.</p><button onClick={checkDevices} disabled={busy}>Check your microphone</button><p role="status">{devicesReady?(micDetected?'Microphone connected · signal detected':'Microphone connected · speak to test'):'Device checks not completed'}</p>
  <label><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)}/>I consent to voice processing for this interview.</label>
  <button onClick={begin} disabled={busy||!devicesReady||!micDetected||!consent}>Begin interview</button></section>}
- <div className="room-participants"><section className="room-interviewer"><h2>AI interviewer</h2><VoiceVisualizer tone="interviewer" active={aiSpeaking} getMeter={()=>voice.current?.meterFor('question')} label={aiSpeaking?'Speaking':''}/><p>{aiSpeaking?'Speaking':'Here to listen'}</p></section><section className="room-candidate"><h2>You</h2><VoiceVisualizer tone="candidate" active={listening} getMeter={()=>voice.current?.meterFor('voice')} label={listening?'Listening':''}/><p>{listening?'Your voice is being transcribed live':started?'Microphone live':'Waiting to begin'}</p></section></div>
+ <div className="room-participants"><section className="room-interviewer"><h2>AI interviewer</h2><VoiceVisualizer tone="interviewer" active={aiSpeaking} getMeter={()=>voice.current?.meterFor('question')} label={aiSpeaking?'Speaking':''}/><p>{aiSpeaking?'Speaking':'Here to listen'}</p></section><section className="room-candidate"><h2>You</h2><VoiceVisualizer tone="candidate" active={listening} getMeter={()=>voice.current?.meterFor('voice')} label={listening?'Listening':''}/><p>{listening?'Your voice is being transcribed live':started?'Tap to speak when the question ends':'Waiting to begin'}</p></section></div>
  {!done&&<section className="room-question"><SpokenQuestion text={flow.active?.text} revealed={shown}/></section>}
  <p className="room-state" role="status">{label}</p>
+ {focusNote&&<p className="room-warn" role="alert">{focusNote}</p>}
+ {started&&!done&&status==='awaiting-tap'&&<button className="room-tap" onClick={tapToSpeak} disabled={busy}>Tap to speak</button>}
+ {started&&!done&&status==='listening'&&<button className="room-done" onClick={doneSpeaking} disabled={busy}>I’m done speaking</button>}
  {started&&!done&&status!=='technical-stop'&&<section className="room-transcript"><h2>Your response</h2><p>{text||'Your speech transcript appears here.'}</p><small>{draftStatus}</small></section>}
  {status==='technical-stop'&&<section className="room-help"><p>No answer has been silently resubmitted. Contact support; automatic retry after an uncertain submission requires a separately approved recovery flow.</p></section>}
  {done&&<p>Your saved answers are submitted for human review.</p>}

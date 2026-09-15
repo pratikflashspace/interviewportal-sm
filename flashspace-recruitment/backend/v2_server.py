@@ -189,7 +189,7 @@ class InterviewV2App(RoleManagementApp):
                     question=f['active']['text'];self.ai_quota(a,'speech-v2',40)
                 elif method=='POST' and action=='answer':
                     try:
-                        f,fresh=commit_answer(f,body.get('event_id'),body.get('version'),body.get('question_id'),body.get('answer'),now())
+                        f,fresh=commit_answer(f,body.get('event_id'),body.get('version'),body.get('question_id'),body.get('answer'),now(),body.get('focus_losses') if type(body.get('focus_losses')) is int else 0)
                     except FlowError as exc:raise APIError(409,str(exc)) from None
                     if not fresh:return {'application_id':aid,**public_flow(f)},[]
                     self.save_flow(a,f);self.deciding.add(aid)

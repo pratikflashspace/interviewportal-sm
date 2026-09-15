@@ -13,6 +13,8 @@ export default function PublicLanding(){
  const mounted=useRef(false),lock=useRef(false),controller=useRef(null),form=useRef(null);
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;controller.current?.abort();};},[]);
  useEffect(()=>{const c=new AbortController();let active=true;setRoles(null);setRolesError('');landingRequest('/roles',{signal:c.signal}).then(publicRoles).then(r=>{if(active)setRoles(r);}).catch(e=>{if(active)setRolesError(e.message);});return()=>{active=false;c.abort();};},[revision]);
+ // A signed-in user should never sit on the public landing: land them in their workspace.
+ useEffect(()=>{const c=new AbortController();landingRequest('/me',{signal:c.signal}).then(u=>{if(u&&mounted.current)window.location.replace(workspaceFor(u));}).catch(()=>{});return()=>c.abort();},[]);
  async function work(fn){if(lock.current)return;lock.current=true;setBusy(true);setError('');controller.current=new AbortController();try{await fn(controller.current.signal);}catch(e){if(mounted.current)setError(e.message);}finally{lock.current=false;if(mounted.current)setBusy(false);}}
  function showAuth(){setSelected(null);setOpen(true);setStep('checking');return work(async signal=>{const u=await landingRequest('/me',{signal});if(!mounted.current)return;if(u){workspaceFor(u);setIdentity(u);setStep('existing');}else{setIdentity(null);setStep('choice');}});}
  function choose(value){if(busy)return;setRole(value);setStep('login');setError('');}

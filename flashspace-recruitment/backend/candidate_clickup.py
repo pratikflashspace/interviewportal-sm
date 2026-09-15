@@ -144,7 +144,11 @@ class CandidateFolderClickUp(WorkspaceClickUp):
         lines += ['FULL INTERVIEW TRANSCRIPT']
         for i, t in enumerate(a['answers'], 1):
             prefix = f"[{t.get('stage', 'interview')} / {t.get('kind', 'question')}] " if t.get('flow_version') == 2 else ''
-            lines += [f"Question {i}: {prefix}{t['question']}", f"Candidate: {t['answer']}", f"Saved: {t['at']}", '']
+            lines += [f"Question {i}: {prefix}{t['question']}", f"Candidate: {t['answer']}", f"Saved: {t['at']}"]
+            losses = t.get('focus_losses')
+            if losses:
+                lines.append(f"Attention: candidate left or switched away from the interview window {losses} time(s) during this answer. Recorded automatically.")
+            lines.append('')
         stage = a.get('_hiring_stage')
         if stage:
             lines += ['RECRUITER HIRING DECISION',

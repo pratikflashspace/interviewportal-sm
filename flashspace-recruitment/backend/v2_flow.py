@@ -29,11 +29,13 @@ def similar(a, b):
     return bool(aa and bb) and len(aa & bb)/len(aa | bb) >= .72
 
 
-def commit_answer(flow, event_id, expected_version, question_id, transcript, stamp):
+def commit_answer(flow, event_id, expected_version, question_id, transcript, stamp, focus_losses=0):
     if not isinstance(event_id, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{8,80}', event_id):
         raise FlowError('Invalid answer event.')
     if not isinstance(transcript, str) or not 1 <= len(transcript.strip()) <= 6000:
         raise FlowError('Answer must contain 1 to 6000 characters.')
+    if type(focus_losses) is not int or not 0 <= focus_losses <= 999:
+        raise FlowError('Invalid focus record.')
     answer = transcript.strip()
     for previous in flow['answers']:
         if previous['event_id'] == event_id:
@@ -50,7 +52,8 @@ def commit_answer(flow, event_id, expected_version, question_id, transcript, sta
     result = copy.deepcopy(flow)
     result['answers'].append({'event_id': event_id, 'question_id': active['id'], 'question': active['text'],
         'answer': answer, 'at': stamp, 'stage': active['stage'], 'kind': active['kind'],
-        'category': active['category'], 'parent_id': active['parent_id'], 'flow_version': 2})
+        'category': active['category'], 'parent_id': active['parent_id'], 'flow_version': 2,
+        'focus_losses': focus_losses})
     result['version'] += 1
     result['pending_decision'] = copy.deepcopy(active)
     result['active'] = None

@@ -10,6 +10,7 @@ from unittest.mock import patch
 import test_backend as legacy
 from backend.server import APIError
 from backend.candidate_clickup import CandidateFolderClickUp
+from backend.v2_flow import create_flow, commit_answer, FlowError
 
 FOLDER = '901612030752'
 
@@ -254,3 +255,35 @@ class CandidateFolderTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FocusLossTests(CandidateFolderTests):
+    """Anti-cheat: focus losses travel with each answer into the ClickUp transcript."""
+
+    def test_focus_loss_recorded_per_answer(self):
+        self.signup(email='focus@example.com', name='Focus Candidate')
+        f1 = self.apply_v2()
+        base = '/api/v2/applications/' + f1['application_id']
+        f = f1
+        for i in range(10):
+            qid = f['active']['id']
+            answer = 'Synthetic focus response %d with a concrete contribution.' % i
+            self.ok(base + '/end-check', {'question_id': qid, 'version': f['version'], 'answer': answer})
+            f = self.ok(base + '/answer', {'event_id': 'focus-event-%d' % i, 'version': f['version'],
+                                           'question_id': qid, 'answer': answer,
+                                           'focus_losses': 1 if i == 0 else 0})
+            self.assertEqual(f['answers'][-1].get('focus_losses'), 1 if i == 0 else 0)
+        self.app.work_once()
+        interview = next(t for t in self.api.all_tasks() if t['name'].startswith('Interview'))
+        self.assertIn('left or switched away from the interview window 1 time(s)', interview['description'])
+
+    def test_focus_loss_validation(self):
+        from backend.v2_flow import commit_answer, FlowError
+        flow = create_flow('sales', 7)
+        with self.assertRaises(FlowError):
+            commit_answer(flow, 'event-12345', 0, flow['active']['id'], 'A valid answer.', 'now', -1)
+        with self.assertRaises(FlowError):
+            commit_answer(flow, 'event-12345', 0, flow['active']['id'], 'A valid answer.', 'now', 1000)
+        f, fresh = commit_answer(flow, 'event-12345', 0, flow['active']['id'], 'A valid answer.', 'now', 2)
+        self.assertTrue(fresh)
+        self.assertEqual(f['answers'][0]['focus_losses'], 2)

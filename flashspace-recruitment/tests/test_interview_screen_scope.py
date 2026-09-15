@@ -31,3 +31,27 @@ class ScreenScopeTests(unittest.TestCase):
         self.assertNotIn('>{text}<',src)
 
 if __name__=='__main__':unittest.main()
+
+
+class TapToSpeakContract(unittest.TestCase):
+    """Button-driven turns: mic opens only on Tap to speak and closes at Done."""
+
+    def test_room_has_tap_and_done_controls(self):
+        src = (ROOT / 'IntegratedInterview.jsx').read_text()
+        for expected in ('Tap to speak', 'I\u2019m done speaking', 'tapToSpeak', 'doneSpeaking',
+                          "status==='awaiting-tap'", "status==='listening'", 'awaiting-tap'):
+            self.assertIn(expected, src)
+        # The mic must never be open while the interviewer speaks.
+        self.assertNotIn("stopAudio();\n    if(msg.event==='transcript.partial')", src)
+
+    def test_interviewer_speech_is_never_interrupted_by_noise(self):
+        src = (ROOT / 'IntegratedInterview.jsx').read_text()
+        # Old bug: openSpeech() ran before the question played, so background noise
+        # during playback called stopAudio() and cut the question mid-sentence.
+        self.assertNotIn('connectSpeech();const p=await allowance', src)
+        self.assertIn('await connectSpeech();if(paused.current||run!==epoch.current)return;setStatus(', src)
+
+    def test_css_has_button_styles(self):
+        css = (ROOT / 'focused-room.css').read_text()
+        self.assertIn('.focused-room .room-tap', css)
+        self.assertIn('.focused-room .room-done', css)

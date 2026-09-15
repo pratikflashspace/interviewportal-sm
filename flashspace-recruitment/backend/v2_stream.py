@@ -200,7 +200,7 @@ async def voice(socket):
             # transcripts or raw upstream exceptions.
             LOG.warning('voice_failed phase=%s',phase)
             if not disconnected:
-                try:await socket.send_json({'event':'error','message':'Voice connection unavailable. Pause and reconnect or use typing.'})
+                try:await socket.send_json({'event':'error','message':'Voice connection unavailable. Tap to speak again to reconnect.'})
                 except Exception:pass
     finally:
         release_lease(aid,lease)
