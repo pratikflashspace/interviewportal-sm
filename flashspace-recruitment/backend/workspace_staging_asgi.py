@@ -9,7 +9,6 @@ from starlette.applications import Starlette
 from starlette.routing import Route, WebSocketRoute, Mount
 from . import v2_stream as bridge
 from .candidate_account import WorkspaceApp
-from .v2_endpoint import EvidenceOnlyAI
 
 STAGING_ORIGIN='https://interviewportal-sm-1.onrender.com'
 
@@ -25,7 +24,8 @@ def validate_staging():
 
 async def startup():
     validate_staging()
-    bridge.backend=await asyncio.to_thread(WorkspaceApp,ai=EvidenceOnlyAI())
+    from .hybrid_provider import hybrid_ai_or_evidence_only
+    bridge.backend=await asyncio.to_thread(WorkspaceApp,ai=hybrid_ai_or_evidence_only())
 
 app=Starlette(routes=[Route('/v2-pcm-worklet.js',bridge.pcm_worklet),
     WebSocketRoute('/api/v2/voice/{aid}',bridge.voice),Mount('/',app=bridge.http_app)],

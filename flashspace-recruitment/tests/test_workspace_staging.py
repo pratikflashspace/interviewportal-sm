@@ -29,9 +29,10 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
     async def test_runtime_installs_real_workspace_factory(self):
         previous=runtime.bridge.backend
         try:
-            with patch.dict(os.environ,StagingGuardTests().env(),clear=True),patch.object(runtime.asyncio,'to_thread',new_callable=AsyncMock) as thread,patch.object(runtime,'EvidenceOnlyAI',return_value='synthetic-ai'):
+            with patch.dict(os.environ,StagingGuardTests().env(),clear=True),patch.object(runtime.asyncio,'to_thread',new_callable=AsyncMock) as thread,patch('backend.hybrid_provider.hybrid_ai_or_evidence_only',return_value='synthetic-ai') as select:
                 thread.return_value='synthetic-backend'
                 await runtime.startup()
+                select.assert_called_once_with()
                 thread.assert_awaited_once_with(runtime.WorkspaceApp,ai='synthetic-ai')
                 self.assertEqual(runtime.bridge.backend,'synthetic-backend')
         finally:runtime.bridge.backend=previous
