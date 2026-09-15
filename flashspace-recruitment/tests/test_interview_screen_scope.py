@@ -5,7 +5,7 @@ ROOT=Path(__file__).resolve().parents[1]/'web/src/v2'
 class ScreenScopeTests(unittest.TestCase):
     def test_controls_and_preflight_remain_real(self):
         src=(ROOT/'IntegratedInterview.jsx').read_text()
-        for forbidden in ('>Pause interview<','>Use typing alternative<','>Start Recording Answer<','>Reload Saved State<','Saved questions and answers','getUserMedia({video','<video'):
+        for forbidden in ('>Pause interview<','>Use typing alternative<','>Start Recording Answer<','>Reload Saved State<','Saved questions and answers','Hear again','getUserMedia({video','<video','Play test sound'):
             self.assertNotIn(forbidden,src)
         for expected in ('checkDevices','micDetected','consent','Begin interview','room-preflight','room-question','room-participants','Check your microphone'):
             self.assertIn(expected,src)
