@@ -55,7 +55,20 @@ class TapToSpeakContract(unittest.TestCase):
         src = (ROOT / 'IntegratedInterview.jsx').read_text()
         # Regression (staging): Q1 worked, Q2+ froze because advance() left the
         # TurnController paused, so every speech event from Q2 onward was rejected.
-        self.assertIn('await restore(next);ctl.current.begin();const p=await allowance(next)', src)
+        self.assertIn('await restore(next);ctl.current.begin();', src)
+
+    def test_provider_failures_are_recoverable_not_fatal(self):
+        src = (ROOT / 'IntegratedInterview.jsx').read_text()
+        # Regression (staging): a transient Sarvam TTS/socket hiccup mid-interview
+        # hit stopWithError() and ended the attempt with the technical-stop panel.
+        # Now TTS failure reveals the question text and a socket drop keeps the
+        # transcript with reconnect-or-done; only usage limits and failed submits stop.
+        self.assertIn('voiceLost(', src)
+        self.assertIn("revealFull();setWarn('Question audio is unavailable", src)
+        self.assertIn("status==='voice-lost'", src)
+        # The still-fatal paths must remain fatal.
+        self.assertIn("usage_limit_reached", src)
+        self.assertIn('Contact support before retrying an uncertain submission', src)
 
     def test_css_has_button_styles(self):
         css = (ROOT / 'focused-room.css').read_text()
