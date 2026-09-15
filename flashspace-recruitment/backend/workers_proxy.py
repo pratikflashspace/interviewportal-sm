@@ -7,10 +7,11 @@ import time
 from urllib import request, error
 
 ENDPOINT = 'https://pool-a-pratik-ai.yasasv.workers.dev/v1/run'
-LLM_MODEL = '@cf/zai-org/glm-4.7-flash'
+LLM_MODEL = '@cf/deepseek-ai/deepseek-v4-flash'
 STT_MODEL = '@cf/openai/whisper-large-v3-turbo'
 TTS_MODEL = '@cf/myshell-ai/melotts'
-MODELS = frozenset((LLM_MODEL, STT_MODEL, TTS_MODEL))
+MODELS = frozenset((LLM_MODEL, STT_MODEL, TTS_MODEL, '@cf/zai-org/glm-4.7-flash',
+                    '@cf/moonshotai/kimi-k2.7-code'))
 MAX_RESPONSE = 16 * 1024 * 1024
 MAX_AUDIO = 2 * 1024 * 1024
 
