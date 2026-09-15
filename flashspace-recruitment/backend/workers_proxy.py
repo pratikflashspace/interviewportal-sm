@@ -45,6 +45,10 @@ class WorkersProxyProvider:
             'Authorization': 'Bearer ' + self.token,
             'Content-Type': 'application/json',
             'Accept': 'audio/mpeg, application/json' if audio else 'application/json',
+            # Cloudflare edge policies commonly reject Python-urllib's default
+            # User-Agent as bot traffic (observed as 401 with a valid token that
+            # succeeds via curl). Identify as the application instead.
+            'User-Agent': 'Teamrecrut-Interview/1.0',
         })
         for attempt in range(2):
             try:

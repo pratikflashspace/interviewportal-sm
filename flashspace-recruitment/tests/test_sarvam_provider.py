@@ -149,19 +149,28 @@ class SarvamTests(unittest.TestCase):
             send.assert_not_called()
 
     def test_http_failures_sanitized_no_retry(self):
-        for code in (301, 302, 307, 308, 400, 401, 402, 403, 413, 422, 429, 500, 503):
+        # Non-transient failures (redirects, auth, quota, request errors) never retry.
+        # 5xx and 404 are transient Sarvam blips for TTS and retry exactly once.
+        for code in (301, 302, 307, 308, 400, 401, 402, 403, 413, 422, 429):
             exc = HTTPError(ORIGIN, code, 'synthetic-test-only private', {}, io.BytesIO(b'private body'))
             with patch.object(self.p.opener, 'open', side_effect=exc) as send:
                 with self.assertRaises(APIError) as caught: self.p.speech('Test question')
             self.assertEqual(send.call_count, 1)
             self.assertNotIn('synthetic-test-only', caught.exception.message)
             self.assertNotIn('private', caught.exception.message)
+        for code in (500, 503):
+            exc = HTTPError(ORIGIN, code, 'synthetic-test-only private', {}, io.BytesIO(b'private body'))
+            with patch.object(self.p.opener, 'open', side_effect=exc) as send:
+                with self.assertRaises(APIError) as caught: self.p.speech('Test question')
+            self.assertEqual(send.call_count, 2, 'transient %s must retry exactly once' % code)
+            self.assertNotIn('private', caught.exception.message)
 
-    def test_transport_failures_no_retry(self):
+    def test_transport_failures_retry_once_for_tts(self):
+        # TTS transport blips (timeout, socket reset) retry exactly once before failing.
         for exc in (TimeoutError('private'), URLError('private'), OSError('private')):
             with patch.object(self.p.opener, 'open', side_effect=exc) as send:
                 with self.assertRaises(APIError): self.p.speech('Test question')
-            self.assertEqual(send.call_count, 1)
+            self.assertEqual(send.call_count, 2)
 
     def test_invalid_envelopes_and_size_limit(self):
         for value in (b'x'*(MAX_RESPONSE+1), b'not-json', [], {'error': 'private'}, {'success': False}):

@@ -104,7 +104,11 @@ class SarvamProvider:
                 message = 'Sarvam could not transcribe this recording. Try a clip under 30 seconds, or type your answer.'
             else:
                 message = 'Sarvam request failed. Retry later or ask the operator to check service status.'
-            raise E(502, message) from None
+            failure = E(502, message)
+            # Preserve the upstream status for callers that distinguish transient
+            # failures (retryable) from deterministic quota/auth failures (never).
+            failure.sarvam_status = status
+            raise failure from None
         except (error.URLError, TimeoutError, OSError):
             raise E(502, 'Sarvam did not respond successfully. Retry later; saved answers are retained.') from None
         if len(raw) > MAX_RESPONSE:
@@ -171,19 +175,34 @@ class SarvamProvider:
     def speech(self, question):
         if not isinstance(question, str) or not 1 <= len(question.strip()) <= 650:
             raise self.error_type(400, 'No valid question is available for speech.')
-        result = self._send(TTS_PATH, json.dumps({
+        payload = json.dumps({
             'text': question, 'language_code': 'en-IN', 'speaker': 'shubh',
             'model': TTS_MODEL, 'speech_sample_rate': 24000,
             'output_audio_codec': 'mp3', 'pace': 1.0,
-        }).encode())
-        audios = result.get('audios')
-        try:
-            if not isinstance(audios, list) or len(audios) != 1 or not isinstance(audios[0], str):
-                raise ValueError()
-            audio = base64.b64decode(audios[0], validate=True)
-            if not (audio.startswith(b'ID3') or (len(audio) > 1 and audio[0] == 255 and audio[1] & 224 == 224)):
-                raise ValueError()
-        except (ValueError, TypeError):
-            raise self.error_type(502, 'Sarvam returned no valid MP3 audio.') from None
-        # Matches the existing WSGI audio/mpeg response contract, without a UI change.
-        return audio
+        }).encode()
+        # TTS is the one provider call that must not fail an interview turn on a
+        # transient hiccup. One retry on network-level failures only: 5xx and
+        # timeouts are Sarvam blips, while 401/402/429 (entitlement/quota) are
+        # reported by _send as errors the retry deliberately does not re-attempt.
+        for attempt in (1, 2):
+            try:
+                result = self._send(TTS_PATH, payload)
+                audios = result.get('audios')
+                if not isinstance(audios, list) or len(audios) != 1 or not isinstance(audios[0], str):
+                    raise ValueError()
+                audio = base64.b64decode(audios[0], validate=True)
+                if not (audio.startswith(b'ID3') or (len(audio) > 1 and audio[0] == 255 and audio[1] & 224 == 224)):
+                    raise ValueError()
+                # Matches the existing WSGI audio/mpeg response contract, without a UI change.
+                return audio
+            except self.error_type as exc:
+                # Retry policy: only transport failures (no upstream status) and
+                # 5xx server blips are transient. Quota/credit/auth (401/402/429),
+                # forbidden (403) and malformed-request failures (3xx/4xx) are
+                # deterministic - retrying cannot help and can double charge.
+                status = getattr(exc, 'sarvam_status', None)
+                if attempt == 1 and (status is None or status >= 500):
+                    continue
+                raise
+            except (ValueError, TypeError):
+                raise self.error_type(502, 'Sarvam returned no valid MP3 audio.') from None
