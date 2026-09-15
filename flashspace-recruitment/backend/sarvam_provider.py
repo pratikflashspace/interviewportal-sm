@@ -5,9 +5,12 @@ No SDK or new dependency required. Never log credentials, audio or responses.
 """
 import base64
 import json
+import logging
 import os
 import secrets
 from urllib import request, error
+
+LOG = logging.getLogger('flashspace')
 
 ORIGIN = 'https://api.sarvam.ai'
 CHAT_PATH = '/v1/chat/completions'
@@ -81,6 +84,17 @@ class SarvamProvider:
                 raw = response.read(MAX_RESPONSE + 1)
         except error.HTTPError as exc:
             status = exc.code
+            # Log the provider's own error code/name (never request bodies or keys)
+            # so configuration and entitlement failures are diagnosable from logs.
+            detail = ''
+            try:
+                with exc as e:
+                    snippet = e.read(512)
+                parsed = json.loads(snippet or b'{}')
+                detail = str(parsed.get('error', {}).get('code') or parsed.get('error') or parsed.get('message') or '')[:120]
+            except Exception:
+                pass
+            LOG.warning('sarvam_rejected path=%s status=%s detail=%s', path, status, detail or 'unspecified')
             exc.close()
             if status in (401, 403):
                 message = 'Sarvam access denied. Check the staging API key and model access.'
