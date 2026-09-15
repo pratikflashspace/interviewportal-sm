@@ -60,18 +60,22 @@ def commit_answer(flow, event_id, expected_version, question_id, transcript, sta
     return result, True
 
 
-def resolve_next(flow, followup_index=None):
+def resolve_next(flow, followup=None):
     result = copy.deepcopy(flow)
     parent = result['pending_decision']
     if parent is None:
         return result
     options = parent.get('followups', [])
-    use = (parent['kind']=='core' and result['followups'][parent['stage']] < 2
-           and type(followup_index) is int and 0 <= followup_index < len(options))
-    if use:
-        question = options[followup_index]
-        use = not any(similar(question, a['question']) for a in result['answers'])
-    if use:
+    question = None
+    if parent['kind']=='core' and result['followups'][parent['stage']] < 2:
+        if isinstance(followup, str) and 20 <= len(followup.strip()) <= 300:
+            # Live-generated question: validated by the caller, deduped here.
+            candidate = ' '.join(followup.split())
+            question = candidate if not any(similar(candidate, a['question']) for a in result['answers']) else None
+        elif type(followup) is int and 0 <= followup < len(options):
+            candidate = options[followup]
+            question = candidate if not any(similar(candidate, a['question']) for a in result['answers']) else None
+    if question:
         result['active'] = {**parent, 'id': parent['id']+'-followup', 'text': question,
                             'kind': 'followup', 'parent_id': parent['id'], 'followups': []}
         result['followups'][parent['stage']] += 1

@@ -88,12 +88,58 @@ class HybridRoutingTests(unittest.TestCase):
 
         def proxy_structured(self, system, payload, name, schema):
             seen['name'] = name
+            seen['payload'] = payload
             return {'choice': 0, 'gap': 'personal contribution'}
 
         with patch.object(WorkersProxyProvider, 'structured', proxy_structured):
-            choice = ai.followup({'text': 'Q', 'followups': ['A?', 'B?']}, 'I led the project.')
-        self.assertEqual(choice, 0)
+            decision = ai.followup({'text': 'Q', 'followups': ['A?', 'B?']}, 'I led the project.')
+        self.assertEqual(decision, {'text': 'A?', 'menu_choice': 0})
         self.assertEqual(seen['name'], 'followup_choice')
+
+    def test_live_followup_generation_grounded_in_role(self):
+        ai = self._hybrid()
+        seen = {}
+
+        def proxy_structured(self, system, payload, name, schema):
+            seen['name'] = name
+            seen['payload'] = payload
+            return {'question': 'Which two features did you personally ship in that product, and how did you measure adoption?',
+                    'gap': 'no shipped outcomes', 'menu_choice': -1}
+
+        role = {'title': 'Product Engineer', 'details': 'Own features end to end.', 'skills': ['React']}
+        with patch.object(WorkersProxyProvider, 'structured', proxy_structured):
+            decision = ai.followup({'text': 'Tell me about the product.', 'followups': ['A?', 'B?']},
+                                   'I built a product with a team.', role)
+        self.assertEqual(decision['text'], 'Which two features did you personally ship in that product, and how did you measure adoption?')
+        self.assertEqual(seen['name'], 'live_followup')
+        self.assertEqual(seen['payload']['role']['title'], 'Product Engineer')
+        self.assertIn('style_examples', seen['payload'])
+
+    def test_live_followup_invalid_output_falls_back_to_menu(self):
+        ai = self._hybrid()
+
+        def proxy_structured(self, system, payload, name, schema):
+            if name == 'live_followup':
+                return {'question': 'too short', 'gap': '', 'menu_choice': 1}
+            return {'choice': 1, 'gap': ''}
+
+        with patch.object(WorkersProxyProvider, 'structured', proxy_structured):
+            decision = ai.followup({'text': 'Q', 'followups': ['A?', 'B?']}, 'I led the project.',
+                                    {'title': 'R', 'details': 'd', 'skills': []})
+        self.assertEqual(decision, {'text': 'B?', 'menu_choice': 1})
+
+    def test_live_followup_sufficient_evidence_skips_followup(self):
+        ai = self._hybrid()
+
+        def proxy_structured(self, system, payload, name, schema):
+            if name == 'live_followup':
+                return {'question': '', 'gap': 'answer is complete', 'menu_choice': -1}
+            raise AssertionError(name)
+
+        with patch.object(WorkersProxyProvider, 'structured', proxy_structured):
+            decision = ai.followup({'text': 'Q', 'followups': ['A?', 'B?']}, 'Full answer.',
+                                    {'title': 'R', 'details': 'd', 'skills': []})
+        self.assertIsNone(decision)
 
 
 if __name__ == '__main__':
