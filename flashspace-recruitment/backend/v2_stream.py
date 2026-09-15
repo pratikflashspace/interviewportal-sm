@@ -144,7 +144,12 @@ async def voice(socket):
                 guard=SpeechEvents()
                 async for message in upstream:
                     value=json.loads(message)
-                    if value.get('event')=='error':raise ValueError()
+                    if value.get('event')=='error':
+                        # Log the provider's own error code (never transcripts or keys)
+                        # so realtime entitlement/config failures are diagnosable.
+                        code=value.get('code') or value.get('type') or 'unspecified'
+                        LOG.warning('sarvam_realtime_error code=%s is_fatal=%s', str(code)[:80], bool(value.get('is_fatal')))
+                        raise ValueError()
                     cleaned=clean_event(value)
                     if cleaned:
                         forwarded=guard.accept(cleaned)
