@@ -51,6 +51,12 @@ class TapToSpeakContract(unittest.TestCase):
         self.assertNotIn('connectSpeech();const p=await allowance', src)
         self.assertIn('await connectSpeech();if(paused.current||run!==epoch.current)return;setStatus(', src)
 
+    def test_turn_controller_re_arms_for_every_question(self):
+        src = (ROOT / 'IntegratedInterview.jsx').read_text()
+        # Regression (staging): Q1 worked, Q2+ froze because advance() left the
+        # TurnController paused, so every speech event from Q2 onward was rejected.
+        self.assertIn('await restore(next);ctl.current.begin();const p=await allowance(next)', src)
+
     def test_css_has_button_styles(self):
         css = (ROOT / 'focused-room.css').read_text()
         self.assertIn('.focused-room .room-tap', css)

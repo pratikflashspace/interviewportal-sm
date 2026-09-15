@@ -107,7 +107,9 @@ export default function IntegratedInterview(){
   submit(answer);
  }
  async function submit(answer){
-  if(saving.current||!answer.trim()||answer.length>6000)return;
+  if(saving.current)return;
+  if(!answer.trim()){setStatus('awaiting-tap');return;}
+  if(answer.length>6000){stopWithError('Answer exceeds the supported size. No text was silently truncated. Contact support.');return;}
   const f=current.current,run=epoch.current,event=crypto.randomUUID();saving.current=true;setBusy(true);setStatus('saving');
   try{
    await drafts.current.chain;
@@ -121,7 +123,7 @@ export default function IntegratedInterview(){
   current.current=next;setFlow(next);setText('');focusLoss.current=0;setFocusNote('');
   if(next.status==='completed'){paused.current=true;epoch.current++;stopAudio();await voice.current?.stop();ctl.current.complete();setStatus('completed');return;}
   if(paused.current){setStatus('technical-stop');await allowance(next);return;}
-  await restore(next);const p=await allowance(next);
+  await restore(next);ctl.current.begin();const p=await allowance(next);
   if(p.deliveries_remaining>0)await speak();else{revealFull();setStatus('awaiting-tap');}
  }
  async function leave(){if(busy)return;if(!confirm('Exit this interview? Submitted answers stay saved; an unfinished answer is not a submitted answer.'))return;setBusy(true);paused.current=true;epoch.current++;ctl.current.pause();stopAudio();await closeSpeech();clearInterval(deviceTimer.current);try{await preflight.current.close();await drafts.current.chain;await voice.current?.stop();location.assign('/candidate/workspace/applications');}catch(e){setError('Could not finish saving: '+e.message);setStatus('technical-stop');}finally{setBusy(false);}}
