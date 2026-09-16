@@ -7,7 +7,7 @@ export const EMPLOYMENT_TYPES=['Full time','Part time','Internship','Contract'];
 // saved role text explicitly states them; combined labels like "Remote /
 // On-site — both available" read as On site (office-first hiring).
 export function workMode(role){
- const value=((role.work_mode||'')+' '+(role.location||'')).toLowerCase();
+ const value=role?((role.work_mode||'')+' '+(role.location||'')).toLowerCase():'';
  if(value.includes('hybrid'))return 'Hybrid';
  if(value.includes('remote')&&!value.includes('on-site')&&!value.includes('onsite')&&!value.includes('office'))return 'Remote';
  return 'On site';

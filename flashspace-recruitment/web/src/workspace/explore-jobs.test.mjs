@@ -25,6 +25,7 @@ test('work mode defaults to On site; Hybrid/Remote only when explicit',()=>{
  assert.equal(workMode({work_mode:'Hybrid'}),'Hybrid');
  assert.equal(workMode({location:'Delhi'}),'On site');
  assert.equal(workMode({}),'On site');
+ assert.equal(workMode(null),'On site');
  // Canonical options are always listed so future postings are filterable.
  assert.deepEqual(filterOptions(rows(),'work_mode'),['On site','Hybrid','Remote']);
  assert.deepEqual(filterOptions(rows(),'type'),['Full time','Part time','Internship','Contract']);
