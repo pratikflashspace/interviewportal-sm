@@ -1,21 +1,16 @@
 // Saved public job fields only. No role writes, eligibility or candidate scoring.
 export const MISSING='Not specified';
 export const FILTERS=[['department','Department'],['work_mode','Work mode'],['type','Employment type'],['experience','Experience']];
-export const WORK_MODES=['In office','Hybrid','Remote'];
+export const WORK_MODES=['On site','Hybrid','Remote'];
 export const EMPLOYMENT_TYPES=['Full time','Part time','Internship','Contract'];
-// Canonical filter buckets: saved role text maps to Remote / Hybrid / In office so
-// differently-worded but identical saved values ("Remote / On-site — both available"
-// vs "Remote/On-site - Both Available") no longer appear as duplicate options.
-// Missing work mode is never inferred from narrative location text.
+// Work mode: On site is the default. Hybrid or Remote appear only when the
+// saved role text explicitly states them; combined labels like "Remote /
+// On-site — both available" read as On site (office-first hiring).
 export function workMode(role){
  const value=((role.work_mode||'')+' '+(role.location||'')).toLowerCase();
- if(!value.trim())return '';
- const hasRemote=value.includes('remote');
- const hasOffice=value.includes('on-site')||value.includes('onsite')||value.includes('office');
- if(value.includes('hybrid')||(hasRemote&&hasOffice))return 'Hybrid';
- if(hasRemote)return 'Remote';
- if(hasOffice)return 'In office';
- return '';
+ if(value.includes('hybrid'))return 'Hybrid';
+ if(value.includes('remote')&&!value.includes('on-site')&&!value.includes('onsite')&&!value.includes('office'))return 'Remote';
+ return 'On site';
 }
 export function employmentType(role){
  const value=(role.type||'').toLowerCase();
@@ -38,13 +33,15 @@ export function publicRoles(items){
 export function filterValue(role,key){
  // Work mode and employment type filter on canonical buckets; the saved label
  // stays visible on the role card. A pure city location is never a work mode.
- if(key==='work_mode')return workMode(role)||MISSING;
+ if(key==='work_mode')return workMode(role);
  if(key==='type')return employmentType(role)||MISSING;
  return display(role[key]);
 }
 export function filterOptions(roles,key){
- if(key==='work_mode')return [...WORK_MODES].filter(mode=>roles.some(r=>workMode(r)===mode));
- if(key==='type')return [...EMPLOYMENT_TYPES].filter(t=>roles.some(r=>employmentType(r)===t));
+ // Canonical options are always listed so future Part time / Internship /
+ // Remote postings are filterable the moment they exist.
+ if(key==='work_mode')return [...WORK_MODES];
+ if(key==='type')return [...EMPLOYMENT_TYPES];
  return [...new Set(roles.flatMap(r=>key==='skills'?(r.skills.length?r.skills:[MISSING]):[filterValue(r,key)]))].sort((a,b)=>a.localeCompare(b));
 }
 export function matches(roles,search,filters={}){

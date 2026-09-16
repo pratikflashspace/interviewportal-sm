@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {publicRoles,filterOptions,filterValue,matches,display,employmentType,existingDestination,jobsRequest} from './explore-jobs.mjs';
+import {publicRoles,filterOptions,filterValue,matches,display,employmentType,workMode,existingDestination,jobsRequest} from './explore-jobs.mjs';
 const source={id:'one',title:'Engineering',department:'IT',location:'Remote/On-site - Both Available',experience:'0-1',type:'Full Time',skills:['Python','APIs'],description:'Build products.',details:'- First responsibility\n- Second responsibility\n\nRequirements:\n- Python\n<script>untrusted text</script>',internal_notes:'private',version:7};
 const rows=()=>publicRoles([source,{...source,id:'two',title:'Sales',department:'Sales',skills:['CRM'],location:'Delhi',experience:'0-2 years experience',type:'Part-time',details:'Customer conversations'}]);
 test('saved text and punctuation preserved without internal metadata',()=>{const r=publicRoles([source])[0];assert.equal(r.details,source.details);assert.equal(r.location,source.location);assert.equal(r.experience,'0-1');assert.equal(r.type,'Full Time');assert.equal(r.internal_notes,undefined);assert.equal(r.version,undefined);assert.deepEqual(source.skills,['Python','APIs']);});
 test('only published records accepted and malformed payload fails',()=>{assert.deepEqual(publicRoles([{...source,published:false},{...source,state:'draft'}]),[]);for(const value of [null,{},[{id:'broken'}],[source,source]])assert.throws(()=>publicRoles(value));});
-test('all four filters operate on canonical buckets',()=>{for(const [key,value] of [['department','IT'],['experience','0-1'],['work_mode','Hybrid'],['type','Full time']])assert.deepEqual(matches(rows(),'',{[key]:value}).map(r=>r.id),['one']);assert.equal(matches(rows(),'',{department:'IT',experience:'0-2 years experience'}).length,0);assert.equal(matches(rows(),'',{work_mode:'Remote'}).length,0);assert.deepEqual(matches(rows(),'',{type:'Part time'}).map(r=>r.id),['two']);});
+test('all four filters operate on canonical buckets',()=>{assert.deepEqual(matches(rows(),'',{department:'IT'}).map(r=>r.id),['one']);assert.deepEqual(matches(rows(),'',{experience:'0-1'}).map(r=>r.id),['one']);assert.deepEqual(matches(rows(),'',{work_mode:'On site'}).map(r=>r.id),['one','two']);assert.deepEqual(matches(rows(),'',{type:'Full time'}).map(r=>r.id),['one']);assert.equal(matches(rows(),'',{department:'IT',experience:'0-2 years experience'}).length,0);assert.deepEqual(matches(rows(),'',{type:'Part time'}).map(r=>r.id),['two']);assert.equal(matches(rows(),'',{work_mode:'Hybrid'}).length,0);});
 test('keyword search includes multiline saved requirements and is case insensitive',()=>{assert.deepEqual(matches(rows(),'PYTHON responsibility').map(r=>r.id),['one']);assert.deepEqual(matches(rows(),'customer').map(r=>r.id),['two']);assert.equal(matches(rows(),'unavailable keyword').length,0);assert.equal(matches(rows(),'').length,2);});
 test('employment type maps saved labels to canonical buckets',()=>{
  assert.equal(employmentType({type:'Full Time'}),'Full time');
@@ -14,24 +14,22 @@ test('employment type maps saved labels to canonical buckets',()=>{
  assert.equal(employmentType({type:'Internship'}),'Internship');
  assert.equal(employmentType({type:'Contract'}),'Contract');
  assert.equal(employmentType({type:''}),'');
- assert.deepEqual(filterOptions(rows(),'type'),['Full time','Part time']);
- // Two differently-worded identical types collapse to one filter option.
- const dupTypes=publicRoles([{...source,id:'a',type:'Full Time'},{...source,id:'b',type:'Full-time'}]);
- assert.deepEqual(filterOptions(dupTypes,'type'),['Full time']);
+ assert.deepEqual(filterOptions(rows(),'type'),['Full time','Part time','Internship','Contract']);
 });
-test('work mode maps saved labels to canonical buckets without duplicates',()=>{
- // Two differently-worded identical saved values must collapse to one option.
- const dupRows=publicRoles([{...source,id:'a'},{...source,id:'b',location:'Remote / On-site — both available',work_mode:''}]);
- assert.deepEqual(filterOptions(dupRows,'work_mode'),['Hybrid']);
- assert.equal(matches(dupRows,'',{work_mode:'Hybrid'}).length,2);
- // A pure city location is never bucketed as a work mode.
- assert.deepEqual(filterOptions(rows(),'work_mode'),['Hybrid']);
- assert.equal(filterValue({location:'Delhi'},'work_mode'),'Not specified');
- assert.equal(filterValue({location:'Delhi',work_mode:'Hybrid'},'work_mode'),'Hybrid');
- assert.equal(filterValue({work_mode:'Remote'},'work_mode'),'Remote');
- assert.equal(filterValue({work_mode:'In office'},'work_mode'),'In office');
- assert.equal(filterValue({},'work_mode'),'Not specified');
- assert.equal(display(' '),'Not specified');
+test('work mode defaults to On site; Hybrid/Remote only when explicit',()=>{
+ // "Remote/On-site - Both Available" reads as On site (office-first hiring).
+ assert.equal(workMode({location:'Remote/On-site - Both Available'}),'On site');
+ assert.equal(workMode({location:'Remote / On-site — both available',work_mode:''}),'On site');
+ assert.equal(workMode({work_mode:'Remote'}),'Remote');
+ assert.equal(workMode({work_mode:'Fully remote role'}),'Remote');
+ assert.equal(workMode({work_mode:'Hybrid'}),'Hybrid');
+ assert.equal(workMode({location:'Delhi'}),'On site');
+ assert.equal(workMode({}),'On site');
+ // Canonical options are always listed so future postings are filterable.
+ assert.deepEqual(filterOptions(rows(),'work_mode'),['On site','Hybrid','Remote']);
+ assert.deepEqual(filterOptions(rows(),'type'),['Full time','Part time','Internship','Contract']);
+ assert.equal(filterValue({},'work_mode'),'On site');
+ assert.deepEqual(matches(publicRoles([{...source,id:'x',location:'Remote / On-site — both available',work_mode:''}]),'',{work_mode:'On site'}).length,1);
  assert.deepEqual(filterOptions(rows(),'skills'),['APIs','CRM','Python']);
 });
 test('existing application resumes without a new application; completed shows applications',()=>{assert.equal(existingDestination([],'one'),null);assert.equal(existingDestination([{id:'a b',role_id:'one',flow_version:2,status:'interview'}],'one'),'/interview-v2?application=a%20b');assert.equal(existingDestination([{id:'old',role_id:'one',flow_version:1,status:'interview'}],'one'),'/candidate/workspace/legacy?application=old');assert.equal(existingDestination([{id:'done',role_id:'one',status:'completed'}],'one'),'/candidate/workspace/applications');assert.throws(()=>existingDestination(null,'one'));});
