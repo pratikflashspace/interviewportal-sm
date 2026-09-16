@@ -1,7 +1,8 @@
 // Saved public job fields only. No role writes, eligibility or candidate scoring.
 export const MISSING='Not specified';
-export const FILTERS=[['department','Department'],['experience','Experience'],['location','Location'],['work_mode','Work mode'],['type','Employment type'],['skills','Skills']];
-export const WORK_MODES=['Remote','Hybrid','In office'];
+export const FILTERS=[['department','Department'],['work_mode','Work mode'],['type','Employment type'],['experience','Experience']];
+export const WORK_MODES=['In office','Hybrid','Remote'];
+export const EMPLOYMENT_TYPES=['Full time','Part time','Internship','Contract'];
 // Canonical filter buckets: saved role text maps to Remote / Hybrid / In office so
 // differently-worded but identical saved values ("Remote / On-site — both available"
 // vs "Remote/On-site - Both Available") no longer appear as duplicate options.
@@ -16,6 +17,15 @@ export function workMode(role){
  if(hasOffice)return 'In office';
  return '';
 }
+export function employmentType(role){
+ const value=(role.type||'').toLowerCase();
+ if(!value.trim())return '';
+ if(value.includes('intern'))return 'Internship';
+ if(value.includes('contract')||value.includes('freelance')||value.includes('consult'))return 'Contract';
+ if(value.includes('part'))return 'Part time';
+ if(value.includes('full'))return 'Full time';
+ return '';
+}
 export function display(value){return typeof value==='string'&&value.trim()?value:MISSING;}
 export function publicRoles(items){
  if(!Array.isArray(items))throw Error('Open roles could not be read. Please try again.');
@@ -26,14 +36,15 @@ export function publicRoles(items){
  });
 }
 export function filterValue(role,key){
- // Work mode filters on the canonical Remote / Hybrid / In office bucket; the
- // saved combined label stays visible on the role card. Missing work mode is
- // never inferred from narrative location text.
+ // Work mode and employment type filter on canonical buckets; the saved label
+ // stays visible on the role card. A pure city location is never a work mode.
  if(key==='work_mode')return workMode(role)||MISSING;
+ if(key==='type')return employmentType(role)||MISSING;
  return display(role[key]);
 }
 export function filterOptions(roles,key){
  if(key==='work_mode')return [...WORK_MODES].filter(mode=>roles.some(r=>workMode(r)===mode));
+ if(key==='type')return [...EMPLOYMENT_TYPES].filter(t=>roles.some(r=>employmentType(r)===t));
  return [...new Set(roles.flatMap(r=>key==='skills'?(r.skills.length?r.skills:[MISSING]):[filterValue(r,key)]))].sort((a,b)=>a.localeCompare(b));
 }
 export function matches(roles,search,filters={}){
