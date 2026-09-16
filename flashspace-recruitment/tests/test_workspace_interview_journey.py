@@ -59,7 +59,7 @@ class JourneyTests(unittest.TestCase):
     def ok(self,path,body=None,**kw):
         r=self.req(path,body,**kw);self.assertEqual(r['status'],200,r);return r['body']
     def signup(self,email='candidate@example.com'):
-        self.ok('/api/auth/candidate/signup',{'name':'Synthetic Candidate','email':email,'password':'synthetic-password-123','confirm_password':'synthetic-password-123'})
+        self.ok('/api/auth/candidate/signup',{'name':'Synthetic Candidate','email':email,'password':'synthetic-password-123','confirm_password':'synthetic-password-123','phone':'9876543210'})
     def new_application(self):
         self.signup();return self.ok('/api/v2/applications',{'role_id':'growth','experience':'Synthetic experience for integration testing only.','portfolio':'https://example.com/resume','consent':True,'consent_version':'flashspace-sarvam-conversation-v2'})
     def recruiter(self):

@@ -84,8 +84,7 @@ class WorkspaceApp(WorkspaceFeatures, InterviewRelease):
                 if u or email==self.recruiter_email():raise APIError(409,'This email is unavailable for candidate registration.')
                 name=text(body,'name',2,100)
                 phone=body.get('phone','')
-                if phone=='' :phone=None
-                elif not isinstance(phone,str) or not re.fullmatch(r'\d{10}',phone):raise APIError(400,'Enter a 10-digit phone number, or leave it empty.')
+                if not isinstance(phone,str) or not re.fullmatch(r'\d{10}',phone):raise APIError(400,'Enter your 10-digit phone number.')
                 u={'id':str(uuid.uuid4()),'email':email,'name':name,'admin':0}
                 with self.store.db() as db:
                     db.execute('INSERT INTO users VALUES (?,?,?,?,0,?)',(u['id'],email,name,hash_password(password),now()))

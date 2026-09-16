@@ -59,7 +59,7 @@ class GoogleTests(unittest.TestCase):
         self.req('/api/logout',{});self.prepare();self.assertEqual(self.login()['status'],200)
         with self.app.store.db() as db:self.assertEqual(db.execute('SELECT COUNT(*) AS n FROM users').fetchone()['n'],1)
     def test_no_manual_account_linking(self):
-        self.req('/api/auth/candidate/signup',{'name':'Manual Candidate','email':'synthetic.candidate@gmail.com','password':'synthetic-password-long','confirm_password':'synthetic-password-long'})
+        self.req('/api/auth/candidate/signup',{'name':'Manual Candidate','email':'synthetic.candidate@gmail.com','password':'synthetic-password-long','confirm_password':'synthetic-password-long','phone':'9876543210'})
         self.req('/api/logout',{});self.prepare();self.assertEqual(self.login()['status'],409)
         with self.app.store.db() as db:self.assertEqual(db.execute('SELECT COUNT(*) AS n FROM candidate_google_identities').fetchone()['n'],0)
     def test_reserved_recruiter_and_recruiter_google_denied(self):
@@ -104,7 +104,7 @@ class GoogleTests(unittest.TestCase):
         self.assertEqual(self.login()['status'],429);self.verifier.assert_not_called()
     def test_manual_login_remains_available_when_google_disabled(self):
         with patch.dict(os.environ,{'TEAMRECRUT_CANDIDATE_GOOGLE_ENABLED':'false'}):
-            r=self.req('/api/auth/candidate/signup',{'name':'Manual Candidate','email':'manual@example.com','password':'synthetic-password-long','confirm_password':'synthetic-password-long'})
+            r=self.req('/api/auth/candidate/signup',{'name':'Manual Candidate','email':'manual@example.com','password':'synthetic-password-long','confirm_password':'synthetic-password-long','phone':'9876543210'})
             self.assertEqual(r['status'],200,r);self.req('/api/logout',{})
             self.assertEqual(self.req('/api/auth/candidate/login',{'email':'manual@example.com','password':'synthetic-password-long'})['status'],200)
 

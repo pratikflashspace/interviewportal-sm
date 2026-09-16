@@ -25,7 +25,7 @@ class WorkspaceTests(unittest.TestCase):
             if k=='Set-Cookie':self.cookie=v.split(';')[0]
         return result
     def signup(self,email='candidate@example.com'):
-        return self.req('/api/auth/candidate/signup',{'name':'Test Candidate','email':email,'password':'test-password-long','confirm_password':'test-password-long'})
+        return self.req('/api/auth/candidate/signup',{'name':'Test Candidate','email':email,'password':'test-password-long','confirm_password':'test-password-long','phone':'9876543210'})
     def recruiter(self):
         with self.app.store.db() as db:
             db.execute('INSERT INTO users VALUES (?,?,?,?,1,?)',('recruiter',RECRUITER_EMAIL,'Recruiter',hash_password('test-password-long'),now()))
@@ -78,7 +78,8 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(self.req('/api/workspace/profile',{'version':1,'fields':{'skills':'forbidden'}})['status'],400)
     def test_profile_isolation_logout_and_empty_recommendations(self):
         self.signup();first=self.cookie
-        self.req('/api/workspace/profile',{'version':0,'fields':{'summary':'Only first candidate'}})
+        version=self.req('/api/workspace/profile')['body']['version']
+        self.req('/api/workspace/profile',{'version':version,'fields':{'summary':'Only first candidate'}})
         self.assertEqual(self.req('/api/workspace/candidate/recommendations')['body'],[])
         self.signup('second@example.com')
         self.assertEqual(self.req('/api/workspace/profile')['body']['fields']['summary'],'')

@@ -26,7 +26,8 @@ class ProfileTests(unittest.TestCase):
         return self.req(PATH,{'version':self.get()['version'] if version is None else version,'section':section,'value':value})
     def test_persist_sections_and_preserve_original_text(self):
         self.signup();old='Original education\nNot converted or replaced.'
-        self.req('/api/workspace/profile',{'version':0,'fields':{'education':old,'experience':'Old experience text'}})
+        start=self.req('/api/workspace/profile')['body']['version']
+        self.req('/api/workspace/profile',{'version':start,'fields':{'education':old,'experience':'Old experience text'}})
         p=self.get();self.assertEqual(p['legacy']['education'],old);self.assertEqual(p['sections']['education']['items'],[])
         value={'items':[entry('education',qualification='BSc',institution='Synthetic College',start='2020',end='2024')]}
         self.assertEqual(self.save('education',value)['status'],200)
@@ -56,17 +57,19 @@ class ProfileTests(unittest.TestCase):
         self.recruiter();self.login_recruiter();self.assertEqual(self.req(PATH)['status'],403)
         self.assertEqual(self.req('/api/workspace/profile')['body']['role'],'recruiter')
     def test_role_email_injection_and_bad_links_rejected(self):
-        self.signup()
+        self.signup();before=self.get()['version']
         for section,value in [('personal',{'name':'Test','phone':'','city':'','headline':'','email':'other@example.com'}),('skills',{'items':['Python'],'admin':1}),('unknown',{}),('links',{'portfolio_url':'javascript:alert(1)','linkedin_url':'','github_url':''}),('links',{'portfolio_url':'https://user:pass@example.com','linkedin_url':'','github_url':''}),('resume',{'resume_url':'http://example.com'})]:
             with self.subTest(section=section):self.assertEqual(self.save(section,value)['status'],400)
-        self.assertEqual(self.get()['version'],0)
+        # Every save was rejected: the profile version must not have changed.
+        self.assertEqual(self.get()['version'],before)
     def test_dates_limits_and_empty_records_rejected(self):
         bad=[('education',{'items':[entry('education',qualification='BSc',institution='X',start='2024',end='2020')]}),('experience',{'items':[entry('experience',title='Dev',company='X',start='2024-13')],'no_experience':False}),('education',{'items':[entry('education',qualification='BSc',institution='X',current=True,end='2025')]}),('projects',{'items':[entry('projects')]}),('skills',{'items':['Python','python']}),('skills',{'items':['x']*41}),('experience',{'items':[],'no_experience':'false'}),('summary',{'summary':'x'*2001})]
         for section,value in bad:
             with self.subTest(section=section),self.assertRaises(APIError):validate(section,value)
     def test_stale_version_never_overwrites_saved_data(self):
-        self.signup();self.assertEqual(self.save('summary',{'summary':'Saved'},0)['status'],200)
-        self.assertEqual(self.save('summary',{'summary':'Stale'},0)['status'],409)
+        self.signup();base=self.get()['version']
+        self.assertEqual(self.save('summary',{'summary':'Saved'},base)['status'],200)
+        self.assertEqual(self.save('summary',{'summary':'Stale'},base)['status'],409)
         self.assertEqual(self.get()['sections']['summary']['summary'],'Saved')
     def test_removal_and_fresher_choice_are_persisted_not_ranked(self):
         self.signup();value={'items':[entry('projects',name='Project')]};self.save('projects',value)

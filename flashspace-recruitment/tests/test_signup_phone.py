@@ -1,4 +1,4 @@
-"""Candidate signup phone field: optional, exactly 10 digits when provided.
+"""Candidate signup phone field: required, exactly 10 digits.
 
 The phone number is stored in the candidate's workspace profile (personal
 section + shared field) so it flows into My Profile and the ClickUp Profile task.
@@ -23,21 +23,21 @@ class SignupPhoneTests(ws.WorkspaceTests):
         view = self.req('/api/workspace/candidate/profile')['body']
         self.assertEqual(view['sections']['personal']['phone'], '9876543210')
 
-    def test_empty_phone_is_allowed(self):
+    def test_empty_phone_is_rejected(self):
         r = self.signup_with({'phone': ''})
-        self.assertEqual(r['status'], 200, r)
+        self.assertEqual(r['status'], 400, r)
 
-    def test_missing_phone_field_is_allowed(self):
+    def test_missing_phone_field_is_rejected(self):
         r = self.req('/api/auth/candidate/signup', {'name': 'No Phone', 'email': 'nophone@example.com',
                      'password': 'test-password-long', 'confirm_password': 'test-password-long'})
-        self.assertEqual(r['status'], 200, r)
+        self.assertEqual(r['status'], 400, r)
 
     def test_rejects_non_numeric_phone(self):
         r = self.signup_with({'phone': '98765abcde'})
         self.assertEqual(r['status'], 400, r)
 
     def test_rejects_wrong_length_phone(self):
-        for phone in ('987654321', '98765432101', '98-7654-3210', '+919876543210'):
+        for phone in ('987654321', '98765432101', '98-7654-3210', '+919****3210'):
             r = self.signup_with({'phone': phone})
             self.assertEqual(r['status'], 400, phone)
 

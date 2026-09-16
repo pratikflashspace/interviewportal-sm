@@ -67,7 +67,7 @@ class EndCheckFailOpenTests(unittest.TestCase):
     def signup(self):
         r = self.req('/api/auth/candidate/signup', {'name': 'Fail Open Candidate',
                      'email': 'failopen@example.com', 'password': 'test-password-long',
-                     'confirm_password': 'test-password-long'})
+                     'confirm_password': 'test-password-long', 'phone': '9876543210'})
         self.assertEqual(r['status'], 200, r)
 
     def new_application(self):

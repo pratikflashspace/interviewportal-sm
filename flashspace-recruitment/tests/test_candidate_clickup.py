@@ -120,7 +120,7 @@ class CandidateFolderTests(unittest.TestCase):
 
     def signup(self, email='candidate@example.com', name='Synthetic Candidate'):
         self.ok('/api/auth/candidate/signup', {'name': name, 'email': email,
-                'password': 'synthetic-password-123', 'confirm_password': 'synthetic-password-123'})
+                'password': 'synthetic-password-123', 'confirm_password': 'synthetic-password-123', 'phone': '9876543210'})
 
     def apply_v2(self, role_id='growth'):
         return self.ok('/api/v2/applications', {'role_id': role_id,
@@ -234,7 +234,8 @@ class CandidateFolderTests(unittest.TestCase):
     def test_profile_sections_from_real_profile_data(self):
         self.signup(email='sections@example.com', name='Sections Candidate')
         # Save a structured profile section through the real API.
-        view = self.ok('/api/workspace/candidate/profile', {'version': 0, 'section': 'skills', 'value': {'items': ['Python', 'SQL']}})
+        base = self.req('/api/workspace/candidate/profile')['body']['version']
+        view = self.ok('/api/workspace/candidate/profile', {'version': base, 'section': 'skills', 'value': {'items': ['Python', 'SQL']}})
         self.assertEqual(view['sections']['skills']['items'], ['Python', 'SQL'])
         f = self.apply_v2()
         self.complete_interview('/api/v2/applications/' + f['application_id'], f)
