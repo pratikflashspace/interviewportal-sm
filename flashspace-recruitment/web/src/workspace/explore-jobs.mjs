@@ -1,6 +1,21 @@
 // Saved public job fields only. No role writes, eligibility or candidate scoring.
 export const MISSING='Not specified';
 export const FILTERS=[['department','Department'],['experience','Experience'],['location','Location'],['work_mode','Work mode'],['type','Employment type'],['skills','Skills']];
+export const WORK_MODES=['Remote','Hybrid','In office'];
+// Canonical filter buckets: saved role text maps to Remote / Hybrid / In office so
+// differently-worded but identical saved values ("Remote / On-site — both available"
+// vs "Remote/On-site - Both Available") no longer appear as duplicate options.
+// Missing work mode is never inferred from narrative location text.
+export function workMode(role){
+ const value=((role.work_mode||'')+' '+(role.location||'')).toLowerCase();
+ if(!value.trim())return '';
+ const hasRemote=value.includes('remote');
+ const hasOffice=value.includes('on-site')||value.includes('onsite')||value.includes('office');
+ if(value.includes('hybrid')||(hasRemote&&hasOffice))return 'Hybrid';
+ if(hasRemote)return 'Remote';
+ if(hasOffice)return 'In office';
+ return '';
+}
 export function display(value){return typeof value==='string'&&value.trim()?value:MISSING;}
 export function publicRoles(items){
  if(!Array.isArray(items))throw Error('Open roles could not be read. Please try again.');
@@ -11,12 +26,16 @@ export function publicRoles(items){
  });
 }
 export function filterValue(role,key){
- // Do not parse city strings or infer Remote/On-site/Hybrid from narrative text.
- // In this schema, combined location/work-mode labels are actual stored values.
- if(key==='work_mode')return display(role.work_mode||role.location);
+ // Work mode filters on the canonical Remote / Hybrid / In office bucket; the
+ // saved combined label stays visible on the role card. Missing work mode is
+ // never inferred from narrative location text.
+ if(key==='work_mode')return workMode(role)||MISSING;
  return display(role[key]);
 }
-export function filterOptions(roles,key){return [...new Set(roles.flatMap(r=>key==='skills'?(r.skills.length?r.skills:[MISSING]):[filterValue(r,key)]))].sort((a,b)=>a.localeCompare(b));}
+export function filterOptions(roles,key){
+ if(key==='work_mode')return [...WORK_MODES].filter(mode=>roles.some(r=>workMode(r)===mode));
+ return [...new Set(roles.flatMap(r=>key==='skills'?(r.skills.length?r.skills:[MISSING]):[filterValue(r,key)]))].sort((a,b)=>a.localeCompare(b));
+}
 export function matches(roles,search,filters={}){
  const terms=search.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
  return roles.filter(r=>{
