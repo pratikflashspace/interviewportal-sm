@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {InterviewVoice} from './interview-capture.mjs';
+class Track{constructor(kind){this.kind=kind;this.readyState='live';this.enabled=true;}stop(){this.readyState='ended';}}
+class Stream{constructor(tracks){this.tracks=tracks;}getTracks(){return this.tracks;}getAudioTracks(){return this.tracks.filter(t=>t.kind==='audio');}getVideoTracks(){return this.tracks.filter(t=>t.kind==='video');}}
+class Context{constructor(){this.sampleRate=16000;this.state='running';this.destination={};}async resume(){}async close(){this.state='closed';}createMediaStreamDestination(){return {stream:new Stream([new Track('audio')])};}createMediaStreamSource(){return {connect(){},disconnect(){}};}createMediaElementSource(){return {connect(){},disconnect(){}};}}
+function make(){const calls=[];const tracks=[];const c=new InterviewVoice({api:async path=>{calls.push(path);return {id:'slot',max_bytes:10000,max_seconds:600};},mediaDevices:{getUserMedia:async()=>{const audio=[new Track('audio')];tracks.push(...audio);return new Stream(audio);}},Context,Stream});return {c,calls,tracks};}
+test('pause while permission is pending cancels start and releases eventual tracks',async()=>{let resolve;const audio=[new Track('audio')];const {c,calls}=make();c.mediaDevices.getUserMedia=()=>new Promise(r=>resolve=r);const p=c.begin();c.stop();resolve(new Stream(audio));await assert.rejects(p,/cancelled/);assert.ok(audio.every(t=>t.readyState==='ended'));assert.equal(calls.length,0);});
+test('new channel after stop uses new state and releases previous media',async()=>{const {c,tracks}=make();await c.begin();const first=await c.stop();assert.equal(c.state,'stopped');await c.begin();assert.equal(c.state,'live');await c.stop();assert.ok(tracks.every(t=>t.readyState==='ended'));});
+test('microphone failure yields failed, never live',async()=>{const {c,tracks}=make();await c.begin();tracks[0].onended();await c.stop();assert.equal(c.state,'failed');});

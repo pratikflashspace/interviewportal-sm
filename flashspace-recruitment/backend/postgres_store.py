@@ -12,6 +12,7 @@ DDL=[
 '''CREATE TABLE IF NOT EXISTS applications(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),role_id TEXT NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,synced_version INTEGER NOT NULL DEFAULT 0,task_id TEXT,task_url TEXT,next_retry DOUBLE PRECISION NOT NULL DEFAULT 0,failures INTEGER NOT NULL DEFAULT 0,sync_error TEXT,UNIQUE(user_id,role_id))''',
 '''CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)''',
 '''CREATE TABLE IF NOT EXISTS quotas(key TEXT PRIMARY KEY,n INTEGER NOT NULL,expires DOUBLE PRECISION NOT NULL)''',
+'''CREATE TABLE IF NOT EXISTS pending_reports(application_id TEXT PRIMARY KEY REFERENCES applications(id),failures INTEGER NOT NULL DEFAULT 0,next_retry DOUBLE PRECISION NOT NULL DEFAULT 0)''',
 '''CREATE INDEX IF NOT EXISTS fs_sessions_expiry ON sessions(expires)''',
 '''CREATE INDEX IF NOT EXISTS fs_apps_user ON applications(user_id)''',
 '''CREATE INDEX IF NOT EXISTS fs_apps_retry ON applications(next_retry)''',
@@ -75,10 +76,20 @@ def make_store(base,error_type):
         @contextmanager
         def job_lock(self):
             # Transaction-scoped advisory lock also works with a transaction pooler.
-            # Held on a separate connection, so overlapping deploys cannot run jobs twice.
+            # Held on a separate connection, so overlapping deploys cannot run jobs
+            # twice. The connection stays open (and the lock held) for the whole
+            # work_once() body: with a transaction pooler each job's own `db()`
+            # block is a different session, so releasing early would let a second
+            # worker process the same queue concurrently.
             with self.db() as db:
                 row=db.execute('SELECT pg_try_advisory_xact_lock(185168610) AS acquired').fetchone()
-                yield bool(row['acquired'])
+                try:
+                    yield bool(row['acquired'])
+                finally:
+                    # Hold the transaction (and lock) until the caller finishes;
+                    # commit releases it. Keep the failure path from holding the
+                    # connection open indefinitely on pooler keep-alives.
+                    db.execute('SELECT 1')
     return PostgresStore
 
 def select_store(base,error_type,db_path=None):

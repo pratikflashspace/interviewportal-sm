@@ -1,0 +1,15 @@
+# Candidate Settings and Help & Support
+
+Approval DM 80160054334285. Branch only; no deployment, SendGrid setup, live account provisioning or ClickUp export hierarchy changes.
+
+Routes /candidate/workspace/settings and /candidate/workspace/help use CandidateAccount. Retain Teamrecrut shell, candidate-only navigation, top-right My Profile and no separate Resume page. Settings shows read-only email/role and server-derived sign-in method. Existing Google identity mapping is the source of truth (not email domain or browser choice). Manual password change reuses existing scrypt/password verification and session-revocation logic. Google-only users see Google Account guidance; the Google-capable runtime also rejects direct password-change attempts for these identities. No new auth linking, password recovery, role or email mutation introduced. Future mixed-method account linking would require revisiting this metadata model; current product prohibits implicit linking.
+
+The guarded workspace staging entrypoint now instantiates candidate_account.WorkspaceApp, a subclass of the existing Google-capable app. New read-only /api/workspace/candidate/account endpoint returns only current candidate email, role, method and password-change allowance. No new tables or migrations. Existing staging origin/schema/backup guards remain intact. Other legacy entrypoints do not acquire this new metadata endpoint; frontend must not be deployed against an old mismatched runtime.
+
+Help uses existing /api/workspace/support persistence and recruiter reply flow, not email. Candidate sees only own requests/replies. In-app FAQ and account/data requests do not promise automated deletion, email delivery, response SLA or provider configuration. Inputs persist after errors, local duplicate-submission guard, timeout warning to check saved state before retrying, success only after a valid receipt. Existing API has no server-side support idempotency key: an ambiguous timeout must be checked in the inbox before resending. No claim of exactly-once delivery.
+
+Validation: five backend tests with real isolated WSGI/SQLite account metadata/Google guard/password session revocation/support ownership and replies plus executable Node tests; focused Chromium checks use mocked boundaries for UI validation, retention/retry and mobile layout. Existing full journey and Google header tests remain enabled.
+
+## ClickUp export follow-up
+
+Creator reiterates full candidate profile export 'as a list' and interview summaries/details 'as task'. Existing architecture is role-based Lists with per-application tasks. Asked whether to retain combined profile/interview data on those tasks (recommended initial scope) or use a separate Candidates List with linked profile tasks. No new destination/hierarchy or broad structured-profile exports were inferred or activated. Structured profile export completeness and consent/visibility must be verified before claiming success. This requirement remains open pending the hierarchy clarification.

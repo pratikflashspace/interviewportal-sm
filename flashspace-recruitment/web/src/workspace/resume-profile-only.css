@@ -1,0 +1,13 @@
+/* Candidate-only compatibility override across existing page-local shells.
+   Hide the old navigation entry from layout, focus order and accessibility tree.
+   The old URL is redirected in main.jsx; persisted resume fields are untouched. */
+.tr-shell nav a[href='/candidate/workspace/resume']{display:none!important}
+.cd-shell>aside>.cd-resume-note{display:none}
+/* Do not use print-page absolute positioning for candidate content. Existing
+   desktop fixed sidebar and normal-flow main column are retained. */
+.cd-shell>.tr-main{min-width:0}
+.cd-shell>.tr-main>main{position:relative;min-width:0}
+.cd-shell .cd-intro{flex-wrap:wrap}
+.cd-shell .cd-intro>div{min-width:0;flex:1 1 240px}
+.cd-shell .tr-job-grid>article,.cd-shell .ma-card-main{min-width:0;overflow-wrap:anywhere}
+.cp-card:has(#cp-title-resume){scroll-margin-top:24px}

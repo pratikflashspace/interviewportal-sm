@@ -151,6 +151,19 @@ class ClickUp:
         with self.store.db() as db: db.execute('UPDATE applications SET task_id=?,task_url=? WHERE id=?',(str(tid),url,a['id']))
         return str(tid),url
 
+class _ReportDone(Exception):
+    """Internal control flow: pending report job needs no further work."""
+
+
+def _clickup_sync(self, a):
+    """Route sync through the per-candidate integration when it is active."""
+    clickup = self.clickup
+    if type(clickup).__name__ == 'CandidateFolderClickUp' or clickup.__class__.__name__ == 'CandidateFolderClickUp':
+        # Import lazily: server is imported by candidate_clickup's ancestors.
+        from .candidate_clickup import CandidateFolderClickUp
+        return clickup.sync(a, app=self)
+    return clickup.sync(a)
+
 class Store:
     def __init__(self,path): self.path=path;Path(path).parent.mkdir(parents=True,exist_ok=True)
     @contextmanager
@@ -168,6 +181,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS applications(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),role_id TEXT NOT NULL,data TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,synced_version INTEGER NOT NULL DEFAULT 0,task_id TEXT,task_url TEXT,next_retry REAL NOT NULL DEFAULT 0,failures INTEGER NOT NULL DEFAULT 0,sync_error TEXT,UNIQUE(user_id,role_id));
             CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS quotas(key TEXT PRIMARY KEY,n INTEGER NOT NULL,expires REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS pending_reports(application_id TEXT PRIMARY KEY REFERENCES applications(id),failures INTEGER NOT NULL DEFAULT 0,next_retry REAL NOT NULL DEFAULT 0);
             ''')
         try: os.chmod(self.path,0o600)
         except OSError: pass
@@ -251,6 +265,17 @@ class App:
     def ai_quota(self,a,kind,limit):
         self.store.quota('global-ai',int(os.getenv('MAX_AI_CALLS_PER_DAY','500')))
         self.store.quota(a['id']+':'+kind,limit,86400*7)
+    def quota_charge(self,key,limit=20,seconds=86400*7):
+        """Record a SUCCESSFUL AI call against a per-application allowance.
+
+        This never gates or rejects the call — the call already succeeded.
+        Charging happens only now, so failed or quota-rejected attempts can
+        never starve the report lane. The row is a usage record, not a gate:
+        once a report exists the pending job is deleted and never retried, so
+        the limit only caps successful evaluations.
+        """
+        try:self.store.quota(key,limit,seconds)
+        except APIError:pass  # allowance row already at its cap; the report is still saved.
     def worker(self):
         while not self.stop.is_set():
             self.job_wakeup.wait(30);self.job_wakeup.clear()
@@ -272,15 +297,30 @@ class App:
                     a=self.store.get(aid)
                     if a['status']=='completed' and not a.get('evaluation'):
                         try:
-                            self.ai_quota(a,'evaluation',20)
-                            a['evaluation']=self.ai.evaluate(a['role_snapshot'],a['answers']);a=self.store.save(a)
+                            # Global budget check happens BEFORE the call; the per-application
+                            # evaluation allowance is charged only on success so a rejected or
+                            # failed attempt can never exhaust the app's own retry budget.
+                            self.store.quota('global-ai',int(os.getenv('MAX_AI_CALLS_PER_DAY','500')))
+                            a['evaluation']=self.ai.evaluate(a['role_snapshot'],a['answers'])
+                            self.quota_charge(a['id']+':evaluation')
+                            a=self.store.save(a)
                         except Exception as e:
                             evaluation_error = e
                     version=a['version']
-                self.clickup.sync(a)
-                # Even when AI fails, sync the latest transcript first. Keep the version
-                # pending so the report is retried without losing the application record.
-                if evaluation_error: raise evaluation_error
+                _clickup_sync(self, a)
+                # The transcript is now durably in ClickUp. A failed report must not
+                # hold the sync state hostage: mark this version synced, and keep a
+                # separate durable pending-report job so the report is retried
+                # independently on later passes without re-uploading or duplicating.
+                if evaluation_error:
+                    with self.store.db() as db:
+                        db.execute('INSERT INTO pending_reports(application_id,failures,next_retry) VALUES (?,0,?) '
+                                   'ON CONFLICT(application_id) DO UPDATE SET failures=0,next_retry=excluded.next_retry',
+                                   (aid,time.time()+min(900,30)))
+                    if isinstance(evaluation_error,APIError) and evaluation_error.status in (429,502):
+                        LOG.warning('report_deferred status=%s',evaluation_error.status)
+                    else:
+                        raise evaluation_error
                 with self.store.db() as db: db.execute('UPDATE applications SET synced_version=?,failures=0,sync_error=NULL,next_retry=0 WHERE id=?',(version,aid))
             except Exception as e:
                 message=e.message if isinstance(e,APIError) else 'Integration error. Check server configuration.'
@@ -288,6 +328,38 @@ class App:
                     row=db.execute('SELECT failures FROM applications WHERE id=?',(aid,)).fetchone();n=row['failures']+1
                     db.execute('UPDATE applications SET failures=?,next_retry=?,sync_error=? WHERE id=?',(n,time.time()+min(900,15*(2**min(n,6))),message,aid))
                 LOG.warning('integration_retry status=%s',e.status if isinstance(e,APIError) else 500)
+        # Independent retry lane for reports whose transcript already synced.
+        with self.store.db() as db:
+            db.execute('CREATE TABLE IF NOT EXISTS pending_reports(application_id TEXT PRIMARY KEY REFERENCES applications(id),failures INTEGER NOT NULL DEFAULT 0,next_retry REAL NOT NULL DEFAULT 0)')
+            rows=db.execute('SELECT application_id,failures FROM pending_reports WHERE next_retry<=? ORDER BY next_retry LIMIT 4',(time.time(),)).fetchall()
+        for row in rows:
+            aid=row['application_id']
+            try:
+                with self.lock:
+                    a=self.store.get(aid)
+                    if a.get('evaluation'): raise _ReportDone()
+                    if a['status']!='completed': raise _ReportDone()
+                    self.store.quota('global-ai',int(os.getenv('MAX_AI_CALLS_PER_DAY','500')))
+                    a['evaluation']=self.ai.evaluate(a['role_snapshot'],a['answers'])
+                    self.quota_charge(a['id']+':evaluation')
+                    self.store.save(a)
+                # Report arrived after the transcript: push it to the existing
+                # ClickUp task now, without touching sync state or bumping version.
+                _clickup_sync(self, a)
+            except _ReportDone:
+                pass
+            except Exception as e:
+                n=row['failures']+1
+                # Quota rejections (429) are temporary by nature: retry flat and soon
+                # instead of exponentially backing off to an hour that traffic
+                # windows will never catch.
+                delay=300 if isinstance(e,APIError) and e.status==429 else min(3600,60*(2**min(n,6)))
+                with self.store.db() as db:
+                    db.execute('UPDATE pending_reports SET failures=?,next_retry=? WHERE application_id=?',
+                               (n,time.time()+delay,aid))
+                LOG.warning('report_retry status=%s',e.status if isinstance(e,APIError) else 500)
+                continue
+            with self.store.db() as db: db.execute('DELETE FROM pending_reports WHERE application_id=?',(aid,))
     def route(self,env,body):
         path=env.get('PATH_INFO','/');method=env['REQUEST_METHOD'];headers=[]
         if path=='/api/health':

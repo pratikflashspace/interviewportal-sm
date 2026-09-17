@@ -1,0 +1,9 @@
+# My Interviews — approved branch-only page
+
+Approved DM 80160054309993 responding to 80160054309668. Route /candidate/workspace/interviews, on feat/teamrecrut-separated-workspaces. No deployment, schema migration, provider change, recruiter UI or live-interview flow changes.
+
+Existing authenticated candidate application API supplies recorded interview statuses. Group interview records as Available / In progress and completed records as Completed. The current API cannot distinguish not-started from started precisely, so the UI does not invent that distinction, future appointments, completion timestamps or duration. Application dates are explicitly labelled as application dates, never interview dates. Unknown states are not promoted to available. Candidate-only shell, top-right My Profile, role search, refresh, abort/timeout, loading/empty/error and retry.
+
+Open / Continue reuses the tested continuation guard from My Applications, re-fetching the candidate's own records before navigation. Completed, rejected/hired or unknown-version entries cannot restart. Navigation goes to the existing v2/preflight or legacy flow and does not itself create a session, application or recording. Completed entries link to My Applications using the exact escaped application ID; a minimal integration addition resolves that link only after matching against the signed-in candidate's own response. No arbitrary record lookup or ownership bypass.
+
+Six Node grouping/routing tests and three Python route/scope tests; isolated Chromium covers groups/search, completion/stale guard, real detail-link navigation and foreign-ID denial, no private data, responsive layout and retry. Existing My Applications WSGI tests continue to cover persisted record isolation. Browser APIs are synthetic; no claim of live Google, Sarvam or staging verification. Existing report/sync full-browser failure remains deferred to separate work and remains a release blocker.

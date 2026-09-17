@@ -1,50 +1,38 @@
 [
   {
-    "id": "growth",
-    "title": "Growth & Partnerships",
-    "department": "Growth",
-    "location": "New Delhi · Hybrid",
-    "type": "Full-time",
-    "experience": "1-3 years experience",
-    "description": "Turn conversations into partnerships. Help ambitious businesses find their next workspace.",
-    "details": "Build a partner pipeline, understand customer needs, and develop experiments that bring new businesses into the Flashspace community.",
-    "skills": [
-      "Business development",
-      "Partnerships",
-      "CRM"
-    ],
-    "published": false
-  },
-  {
-    "id": "community",
-    "title": "Community Associate",
-    "department": "Community",
-    "location": "New Delhi · On-site",
+    "id": "generalist-sales",
+    "title": "Generalist (Sales)",
+    "department": "Sales",
+    "location": "Remote / On-site — both available",
     "type": "Full-time",
     "experience": "0-2 years experience",
-    "description": "Make every member feel at home. Create the connections that turn a space into a community.",
-    "details": "Support members day to day, coordinate community events and resolve operational issues with a thoughtful, practical approach.",
-    "skills": [
-      "Member experience",
-      "Events",
-      "Operations"
-    ],
-    "published": false
+    "description": "Turn new conversations into opportunities. Build a sales pipeline through prospecting, customer conversations and consistent follow-ups.",
+    "details": "Prospect for potential customers, qualify leads, understand customer needs and support sales conversations. Maintain accurate CRM records, coordinate next steps and follow up consistently to move opportunities forward. Track pipeline activity and outcomes, and use what you learn to improve outreach and the customer experience.",
+    "skills": ["Prospecting", "Lead qualification", "Customer communication", "CRM", "Sales follow-ups"],
+    "published": true
   },
   {
-    "id": "engineering",
-    "title": "Full-stack Developer",
-    "department": "Engineering",
-    "location": "Remote · India",
+    "id": "generalist-operations",
+    "title": "Generalist (Operations)",
+    "department": "Operations",
+    "location": "Remote / On-site — both available",
     "type": "Full-time",
-    "experience": "2-4 years experience",
-    "description": "Build useful things, end to end. Shape the digital tools that power a better workspace experience.",
-    "details": "Ship accessible customer interfaces, reliable APIs and internal tools. Work closely with operations to turn real user needs into software.",
-    "skills": [
-      "React",
-      "Python",
-      "APIs"
-    ],
-    "published": false
+    "experience": "0-2 years experience",
+    "description": "Keep daily work moving. Coordinate workflows, resolve operational issues and make processes simpler and more reliable.",
+    "details": "Coordinate day-to-day workflows and follow through on tasks across teams. Identify and resolve operational issues, communicate progress and escalate blockers appropriately. Document repeatable processes, keep records accurate and use practical measures to identify improvements in turnaround time, quality and reliability.",
+    "skills": ["Workflow coordination", "Problem solving", "Process improvement", "Documentation", "Cross-team communication"],
+    "published": true
+  },
+  {
+    "id": "ai-marketing",
+    "title": "AI Marketing",
+    "department": "Marketing",
+    "location": "Remote / On-site — both available",
+    "type": "Full-time",
+    "experience": "0-2 years experience",
+    "description": "Own the entire marketing vertical, from paid ads and organic reach to social media, using AI tools to plan, create and improve campaigns.",
+    "details": "Take end-to-end ownership of the marketing vertical: plan priorities, execute campaigns and measure results across paid ads, organic reach, social media, content and related marketing channels. Use AI tools for research, content creation and campaign workflows while checking accuracy, brand consistency and output quality. Coordinate the content calendar and channel activity, run measurable experiments, track performance and use insights to improve reach, engagement and conversion. Bring a practical, hands-on approach to building and improving the overall marketing function.",
+    "skills": ["AI marketing tools", "Paid ads", "Organic reach", "Social media", "Content strategy", "Campaign analytics"],
+    "published": true
   }
 ]
