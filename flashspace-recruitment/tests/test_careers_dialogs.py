@@ -37,8 +37,12 @@ class CareersDialogContracts(unittest.TestCase):
         self.assertIn("'X-Requested-With':'Flashspace'",self.dialog)
         self.assertIn('submitCareerApplication(applyRole,form)',self.app)
         self.assertIn("encodeURIComponent(aid)",self.app)
-        self.assertIn('separate consent inside the interview',self.dialog)
+        # Consent copy is candidate-facing: no internal storage stack names.
+        self.assertIn('with the hiring team.</FieldLabel>',self.dialog)
         self.assertNotIn('Cloudflare',self.dialog)
+        self.assertNotIn('ClickUp',self.dialog)
+        self.assertNotIn('Sarvam',self.dialog)
+        self.assertNotIn('Fictional staging',self.dialog)
 
     def test_existing_branding_and_v2_resume_preserved(self):
         self.assertIn('teamrecrut',self.app)
