@@ -15,16 +15,22 @@ const go=path=>window.location.assign(path);
 export default function ExploreJobs(){
  const [user,setUser]=useState(null),[access,setAccess]=useState('checking'),[roles,setRoles]=useState(null),[error,setError]=useState(''),[actionError,setActionError]=useState(''),[loading,setLoading]=useState(true),[revision,setRevision]=useState(0);
  const [search,setSearch]=useState(''),[filters,setFilters]=useState({}),[selected,setSelected]=useState(null),[applyRole,setApplyRole]=useState(null),[busy,setBusy]=useState(false);
- const lock=useRef(false),mounted=useRef(false),actions=useRef(null);
+ const lock=useRef(false),mounted=useRef(false),actions=useRef(null),appsRef=useRef(null);
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;actions.current?.abort();};},[]);
- useEffect(()=>{let alive=true;const c=new AbortController();setLoading(true);setError('');setRoles(null);setSelected(null);setApplyRole(null);
-  async function load(){try{const identity=await jobsRequest('/me',{signal:c.signal});if(!alive)return;if(!candidateIdentity(identity)){setAccess('denied');setUser(null);return;}setUser(identity);setAccess('allowed');const rows=publicRoles(await jobsRequest('/roles',{signal:c.signal}));if(alive)setRoles(rows);}
+ useEffect(()=>{let alive=true;const c=new AbortController();setLoading(true);setError('');setRoles(null);setSelected(null);setApplyRole(null);appsRef.current=null;
+  async function load(){try{const identity=await jobsRequest('/me',{signal:c.signal});if(!alive)return;if(!candidateIdentity(identity)){setAccess('denied');setUser(null);return;}setUser(identity);setAccess('allowed');const rows=publicRoles(await jobsRequest('/roles',{signal:c.signal}));if(alive)setRoles(rows);
+   // Prefetch existing applications in the background so the Apply click can
+   // open the form instantly. A stale prefetch is safe: the apply endpoint is
+   // idempotent and returns the existing application. begin() re-fetches on
+   // miss. Errors stay silent for the same reason.
+   jobsRequest('/applications',{signal:c.signal}).then(apps=>{if(alive)appsRef.current=apps;}).catch(()=>{});
+  }
   catch(e){if(alive){setError(e.message);if(e.status===401||e.status===403){setUser(null);setAccess('denied');}else setAccess(current=>current==='allowed'?'allowed':'error');}}finally{if(alive)setLoading(false);}}
   load();return()=>{alive=false;c.abort();};
  },[revision]);
  function clear(){setSearch('');setFilters({});}
  async function action(work){if(lock.current)return;lock.current=true;setBusy(true);setActionError('');actions.current=new AbortController();try{await work(actions.current.signal);}catch(e){if(mounted.current)setActionError(e.message);}finally{lock.current=false;if(mounted.current)setBusy(false);}}
- function begin(role){return action(async signal=>{const dest=existingDestination(await jobsRequest('/applications',{signal}),role.id);if(!mounted.current)return;if(dest){go(dest);return;}setSelected(null);setApplyRole(role);});}
+ function begin(role){return action(async signal=>{const apps=appsRef.current||await jobsRequest('/applications',{signal});if(!mounted.current)return;const dest=existingDestination(apps,role.id);if(dest){go(dest);return;}setSelected(null);setApplyRole(role);});}
  function apply(e){e.preventDefault();const form=new FormData(e.currentTarget);return action(async signal=>{const aid=await submitCareerApplication(applyRole,form,async(url,options)=>{const data=await jobsRequest('/v2/applications',{body:JSON.parse(options.body),signal});return {ok:true,json:async()=>data};});if(mounted.current)go('/interview-v2?application='+encodeURIComponent(aid));});}
  const logout=()=>action(async signal=>{await jobsRequest('/logout',{body:{},signal});go('/candidate/login');});
  if(access!=='allowed')return <main className="cd-gate"><h1>{loading&&access==='checking'?'Checking your candidate account…':access==='denied'?'Candidate access required':'Explore Jobs unavailable'}</h1>{error&&<p role="alert">{error}</p>}{!loading&&<><a href="/candidate/login">Sign in to your candidate account</a>{access==='error'&&<button onClick={()=>setRevision(n=>n+1)}>Try again</button>}</>}</main>;

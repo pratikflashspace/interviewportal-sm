@@ -1,5 +1,5 @@
 // Approved Dashboard page only. Other workspace pages retain their current implementation.
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import {Home,Search,FileText,Mic,UserRound,Settings,LifeBuoy,LogOut,ArrowRight,Briefcase,CheckCircle2} from 'lucide-react';
 import CareersDialogs,{submitCareerApplication} from '../CareersDialogs';
 import {request} from './Workspace';
@@ -12,9 +12,10 @@ function Card({label,value,detail,href,icon:Icon}){return <a className="cd-stat"
 export default function CandidateDashboard(){
  const [user,setUser]=useState(null),[data,setData]=useState(null),[error,setError]=useState(''),[access,setAccess]=useState('checking'),[reload,setReload]=useState(0),[loading,setLoading]=useState(true);
  const [selected,setSelected]=useState(null),[applyRole,setApplyRole]=useState(null),[actionError,setActionError]=useState(''),[busy,setBusy]=useState(false);
+ const appsRef=useRef(null);
  useEffect(()=>{
   const controller=new AbortController();let alive=true;const timer=setTimeout(()=>controller.abort(),30000);
-  setLoading(true);setError('');setData(null);setSelected(null);setApplyRole(null);
+  setLoading(true);setError('');setData(null);setSelected(null);setApplyRole(null);appsRef.current=null;
   async function load(){try{
    const identity=await dashboardRequest('/me',{signal:controller.signal});if(!alive)return;
    if(!candidateIdentity(identity)){setAccess('denied');setUser(null);return;}
@@ -22,12 +23,16 @@ export default function CandidateDashboard(){
    const [apps,profile,recommendations]=await Promise.all(['/workspace/candidate/applications','/workspace/profile','/workspace/candidate/recommendations'].map(path=>dashboardRequest(path,{signal:controller.signal})));
    const value={metrics:dashboardMetrics(apps,profile),recommendations:recommendationCards(recommendations)};
    if(alive)setData(value);
+   // Prefetch the candidate applications list (role_id shape) so Apply opens
+   // the form instantly. Idempotent apply makes a stale prefetch safe; begin()
+   // still re-fetches when this has not landed yet. Silent on failure.
+   request('/applications').then(rows=>{if(alive)appsRef.current=rows;}).catch(()=>{});
   }catch(e){if(alive){setError(e.name==='AbortError'?'Dashboard request timed out. Please try again.':e.message);if(e.status===401||e.status===403){setAccess('denied');setUser(null);}else if(!user)setAccess('error');}}
   finally{clearTimeout(timer);if(alive)setLoading(false);}}
   load();return()=>{alive=false;clearTimeout(timer);controller.abort();};
  },[reload]);
  async function logout(){if(busy)return;setBusy(true);try{await request('/logout',{});window.location.assign('/candidate/login');}catch(e){setActionError(e.message);setBusy(false);}}
- async function begin(role){setSelected(null);setActionError('');try{const apps=await request('/applications');const a=apps.find(item=>item.role_id===role.id);if(a){window.location.assign(a.flow_version===2?'/interview-v2?application='+encodeURIComponent(a.id):BASE+'legacy?application='+encodeURIComponent(a.id));return;}setApplyRole(role);}catch(e){setActionError(e.message);}}
+ async function begin(role){setSelected(null);setActionError('');try{const apps=data?.applications||await request('/applications');const a=apps.find(item=>item.role_id===role.id);if(a){window.location.assign(a.flow_version===2?'/interview-v2?application='+encodeURIComponent(a.id):BASE+'legacy?application='+encodeURIComponent(a.id));return;}setApplyRole(role);}catch(e){setActionError(e.message);}}
  async function apply(e){e.preventDefault();if(busy)return;setBusy(true);setActionError('');try{const aid=await submitCareerApplication(applyRole,new FormData(e.currentTarget));window.location.assign('/interview-v2?application='+encodeURIComponent(aid));}catch(e){setActionError(e.message);}finally{setBusy(false);}}
  if(access!=='allowed')return <main className="cd-gate"><DashboardBrand/>{access==='checking'&&loading?<p role="status">Checking your candidate account…</p>:<><h1>{access==='denied'?'Candidate access required':'Dashboard unavailable'}</h1>{error&&<p role="alert">{error}</p>}<a href="/candidate/login">Sign in to your candidate account</a>{access==='error'&&<button onClick={()=>setReload(n=>n+1)}>Try again</button>}</>}</main>;
  const metrics=data?.metrics;
