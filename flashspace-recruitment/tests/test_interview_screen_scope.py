@@ -71,6 +71,15 @@ class TapToSpeakContract(unittest.TestCase):
         # The old immediate-error path must be gone.
         self.assertNotIn("if(!answer){setError('No speech was captured yet. Answer out loud, then tap", src)
 
+    def test_speech_fetch_retries_once_before_silent_fallback(self):
+        src = (ROOT / 'IntegratedInterview.jsx').read_text()
+        # Regression (staging): domain questions lost voice for a stretch when a
+        # transient Sarvam blip failed the single speech fetch; the room immediately
+        # fell back to silent text. One retry now runs before the fallback.
+        self.assertIn('const fetchSpeech=', src)
+        self.assertIn("setTimeout(r,1200)", src)
+        self.assertIn('blob=await fetchSpeech();', src)
+
     def test_provider_failures_are_recoverable_not_fatal(self):
         src = (ROOT / 'IntegratedInterview.jsx').read_text()
         # Regression (staging): a transient Sarvam TTS/socket hiccup mid-interview

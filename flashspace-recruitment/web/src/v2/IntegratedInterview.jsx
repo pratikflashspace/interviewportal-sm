@@ -74,7 +74,18 @@ export default function IntegratedInterview(){
  async function speak(introduction=false){
   const f=current.current,run=epoch.current;setStatus('processing');let blob;
   if(!introduction)setDisclosure({qid:f.active.id,count:0});
-  try{blob=await api('/v2/applications/'+f.application_id+(introduction?'/intro':'/speech'),introduction?{}:{question_id:f.active.id},true);}
+  try{
+   // One retry for transient failures: a single Sarvam blip or a momentary
+   // quota edge must not silently drop a whole question's voice mid-interview.
+   const fetchSpeech=async()=>api('/v2/applications/'+f.application_id+(introduction?'/intro':'/speech'),introduction?{}:{question_id:f.active.id},true);
+   try{blob=await fetchSpeech();}
+   catch(first){
+    if(paused.current||run!==epoch.current)return false;
+    await new Promise(r=>setTimeout(r,1200));
+    if(paused.current||run!==epoch.current)return false;
+    blob=await fetchSpeech();
+   }
+  }
   catch(e){
    if(paused.current||run!==epoch.current)return false;
    // TTS outage is recoverable: reveal the question text and let the candidate answer.
