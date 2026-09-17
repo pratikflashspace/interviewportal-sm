@@ -18,11 +18,11 @@ export function profileResponse(value){
  if(value?.role!=='candidate'||typeof value.email!=='string'||!Number.isInteger(value.version)||value.version<0||!value.sections||!value.legacy||SECTIONS.some(([key])=>!value.sections[key]))throw Error('Profile response is incomplete. Please try again.');
  return value;
 }
-export async function profileRequest(path,{body,signal,fetcher=globalThis.fetch,timeoutMs=30000}={}){
+export async function profileRequest(path,{body,signal,fetcher=globalThis.fetch,timeoutMs=path==='/logout'?65000:30000}={}){
  if(!['/me','/workspace/candidate/profile','/logout'].includes(path))throw Error('Unsupported profile request.');
  const c=new AbortController(),abort=()=>c.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)c.abort();const timer=setTimeout(abort,timeoutMs);
  try{const r=await fetcher('/api'+path,{method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',signal:c.signal,headers:{'X-Requested-With':'Flashspace',...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});let value;try{value=await r.json();}catch{throw Error('Profile response was unreadable. Your unsaved input has been kept.');}
  if(!r.ok){const e=Error(r.status===409?'Profile changed in another session. Review the latest saved section before continuing.':r.status===401?'Your session expired. Sign in again before retrying.':r.status===403?'Candidate access is required.':r.status===400&&typeof value.error==='string'?value.error:r.status===429?'Too many saves. Please wait before retrying.':'Could not save or load your profile. Your unsaved input has been kept.');e.status=r.status;throw e;}return value;
- }catch(e){if(c.signal.aborted)throw Error('Profile request stopped or timed out. Check saved data before retrying; your unsaved input has been kept.');throw e;}
+ }catch(e){if(c.signal.aborted)throw Error(path==='/logout'?'Sign out is taking longer than expected. Wait a moment, refresh, and sign in again if needed.':'Profile request stopped or timed out. Check saved data before retrying; your unsaved input has been kept.');throw e;}
  finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
 }

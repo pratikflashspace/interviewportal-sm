@@ -34,12 +34,12 @@ export function continuation(a){
  if(a.flow_version===1)return '/candidate/workspace/legacy?application='+encodeURIComponent(a.id);
  return null;
 }
-export async function applicationsRequest(path,{signal,fetcher=globalThis.fetch,timeoutMs=30000}={}){
+export async function applicationsRequest(path,{signal,fetcher=globalThis.fetch,timeoutMs=path==='/logout'?65000:30000}={}){
  if(!['/me','/workspace/candidate/applications','/logout'].includes(path))throw Error('Unsupported application request.');
  const c=new AbortController(),abort=()=>c.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)c.abort();const timer=setTimeout(abort,timeoutMs);
  try{const r=await fetcher('/api'+path,{method:path==='/logout'?'POST':'GET',credentials:'same-origin',cache:'no-store',signal:c.signal,headers:{'X-Requested-With':'Flashspace',...(path==='/logout'?{'Content-Type':'application/json'}:{})},...(path==='/logout'?{body:'{}'}:{})});
   if(!r.ok){const e=Error(r.status===401?'Your session has expired. Sign in again.':r.status===403?'Candidate access is required.':'Could not load your applications. Please try again.');e.status=r.status;throw e;}
   try{return await r.json();}catch{throw Error('Application data is unreadable. Please try again.');}
- }catch(e){if(c.signal.aborted)throw Error('Request stopped or timed out. Please try again.');throw e;}
+ }catch(e){if(c.signal.aborted)throw Error(path==='/logout'?'Sign out is taking longer than expected. Wait a moment, refresh, and sign in again if needed.':'Request stopped or timed out. Please try again.');throw e;}
  finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
 }

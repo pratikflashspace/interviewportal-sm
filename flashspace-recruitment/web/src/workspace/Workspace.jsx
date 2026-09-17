@@ -12,7 +12,7 @@ import '../generated/styles.css';
 import './workspace.css';
 
 export async function request(path,body){
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),path==='/logout'?65000:30000);
  try{const r=await fetch('/api'+path,{signal:controller.signal,credentials:'same-origin',method:body===undefined?'GET':'POST',headers:{'X-Requested-With':'Flashspace',...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});const value=await r.json();if(!r.ok)throw Error(value.error||'Request failed. Please try again.');return value;}finally{clearTimeout(timer);}
 }
 const labels={name:'Full name',phone:'Phone number',summary:'Professional summary',education:'Education',experience:'Experience',skills:'Skills',projects:'Projects',certifications:'Certifications',preferences:'Job preferences',resume_url:'Resume link (HTTPS)',designation:'Designation',bio:'About you'};

@@ -58,7 +58,7 @@ export function existingDestination(apps,roleId){
  if(found.status==='completed')return '/candidate/workspace/applications';
  return (found.flow_version===2?'/interview-v2?application=':'/candidate/workspace/legacy?application=')+encodeURIComponent(found.id);
 }
-export async function jobsRequest(path,{body,signal,fetcher=globalThis.fetch,timeoutMs=30000}={}){
+export async function jobsRequest(path,{body,signal,fetcher=globalThis.fetch,timeoutMs=path==='/logout'?65000:30000}={}){
  if(!['/me','/roles','/applications','/logout','/v2/applications'].includes(path))throw Error('Unsupported jobs request.');
  const c=new AbortController(),abort=()=>c.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)c.abort();const timer=setTimeout(abort,timeoutMs);
  try{
@@ -66,6 +66,6 @@ export async function jobsRequest(path,{body,signal,fetcher=globalThis.fetch,tim
   let data;try{data=await r.json();}catch{throw Error('Service response was unreadable. Please try again.');}
   if(!r.ok){const e=Error(r.status===401?'Your session has expired. Sign in again.':r.status===403?'Candidate access is required.':r.status===409?'This role or application changed. Refresh jobs or open My Applications.':r.status===429?'Too many attempts. Please wait before trying again.':r.status===400?(typeof data.error==='string'?data.error:'Check your application details.'):'Could not load or save this request. Please try again.');e.status=r.status;throw e;}
   return data;
- }catch(e){if(c.signal.aborted)throw Error('Request stopped or timed out. For an application, check My Applications before retrying.');throw e;}
+ }catch(e){if(c.signal.aborted)throw Error(path==='/logout'?'Sign out is taking longer than expected. Wait a moment, refresh, and sign in again if needed.':'Request stopped or timed out. For an application, check My Applications before retrying.');throw e;}
  finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
 }

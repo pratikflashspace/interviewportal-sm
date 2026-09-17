@@ -34,5 +34,18 @@ test('work mode defaults to On site; Hybrid/Remote only when explicit',()=>{
  assert.deepEqual(filterOptions(rows(),'skills'),['APIs','CRM','Python']);
 });
 test('existing application resumes without a new application; completed shows applications',()=>{assert.equal(existingDestination([],'one'),null);assert.equal(existingDestination([{id:'a b',role_id:'one',flow_version:2,status:'interview'}],'one'),'/interview-v2?application=a%20b');assert.equal(existingDestination([{id:'old',role_id:'one',flow_version:1,status:'interview'}],'one'),'/candidate/workspace/legacy?application=old');assert.equal(existingDestination([{id:'done',role_id:'one',status:'completed'}],'one'),'/candidate/workspace/applications');assert.throws(()=>existingDestination(null,'one'));});
+test('logout uses a 65s cold-start budget and a truthful timeout message',async()=>{
+ // Regression (staging): after a period of inactivity the free-tier database sleeps;
+ // the logout POST then needs 30-60s while the old 15/30s client timeout aborted it
+ // mid-flight, surfacing a misleading 'check My Applications' error.
+ let seen={};
+ await jobsRequest('/logout',{body:{},fetcher:async(url,o)=>{seen.timeout=undefined;return {ok:true,json:async()=>({ok:true})};}});
+ // Verify the timeout actually used for /logout: fetcher receives the abort signal.
+ await assert.rejects(jobsRequest('/logout',{timeoutMs:5,fetcher:(_,{signal})=>new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(Error('abort'))))}),/Sign out is taking longer than expected/);
+ for(const helper of ['applicationsRequest','profileRequest','accountRequest']){
+   const mod=await import('./'+{applicationsRequest:'my-applications.mjs',profileRequest:'candidate-profile.mjs',accountRequest:'account-client.mjs'}[helper]);
+   await assert.rejects(mod[helper]('/logout',{timeoutMs:5,fetcher:(_,{signal})=>new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(Error('abort'))))}),/Sign out is taking longer than expected|timed out/);
+ }
+});
 test('read-only public jobs request and same-origin application transport',async()=>{await jobsRequest('/roles',{fetcher:async(url,o)=>{assert.equal(url,'/api/roles');assert.equal(o.method,'GET');assert.equal(o.cache,'no-store');assert.equal(o.credentials,'same-origin');return {ok:true,json:async()=>[]};}});await jobsRequest('/v2/applications',{body:{role_id:'one',consent:true},fetcher:async(url,o)=>{assert.equal(o.method,'POST');assert.deepEqual(JSON.parse(o.body),{role_id:'one',consent:true});assert.equal(o.headers['X-Requested-With'],'Flashspace');return {ok:true,json:async()=>({application_id:'synthetic'})};}});await assert.rejects(jobsRequest('/admin/roles'),/Unsupported/);});
 test('failure, invalid JSON and timeout do not invent empty successful results',async()=>{for(const status of [401,403,409,429,500])await assert.rejects(jobsRequest('/roles',{fetcher:async()=>({ok:false,status,json:async()=>({error:'secret details'})})}),e=>e.status===status&&!e.message.includes('secret details'));await assert.rejects(jobsRequest('/roles',{fetcher:async()=>({ok:true,json:async()=>{throw Error();}})}),/unreadable/);await assert.rejects(jobsRequest('/roles',{timeoutMs:5,fetcher:(_,{signal})=>new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(Error('abort'))))}),/timed out/);});
