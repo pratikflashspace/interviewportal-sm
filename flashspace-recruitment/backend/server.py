@@ -265,6 +265,14 @@ class App:
     def ai_quota(self,a,kind,limit):
         self.store.quota('global-ai',int(os.getenv('MAX_AI_CALLS_PER_DAY','500')))
         self.store.quota(a['id']+':'+kind,limit,86400*7)
+    def quota_charge(self,key,limit=20,seconds=86400*7):
+        """Charge a per-application allowance AFTER a successful AI call.
+
+        Failed or quota-rejected attempts must not consume the application's
+        own retry budget: without this a long outage permanently starves the
+        report lane even after the provider recovers.
+        """
+        self.store.quota(key,limit,seconds)
     def worker(self):
         while not self.stop.is_set():
             self.job_wakeup.wait(30);self.job_wakeup.clear()
@@ -286,8 +294,13 @@ class App:
                     a=self.store.get(aid)
                     if a['status']=='completed' and not a.get('evaluation'):
                         try:
-                            self.ai_quota(a,'evaluation',20)
-                            a['evaluation']=self.ai.evaluate(a['role_snapshot'],a['answers']);a=self.store.save(a)
+                            # Global budget check happens BEFORE the call; the per-application
+                            # evaluation allowance is charged only on success so a rejected or
+                            # failed attempt can never exhaust the app's own retry budget.
+                            self.store.quota('global-ai',int(os.getenv('MAX_AI_CALLS_PER_DAY','500')))
+                            a['evaluation']=self.ai.evaluate(a['role_snapshot'],a['answers'])
+                            self.quota_charge(a['id']+':evaluation')
+                            a=self.store.save(a)
                         except Exception as e:
                             evaluation_error = e
                     version=a['version']
@@ -323,8 +336,10 @@ class App:
                     a=self.store.get(aid)
                     if a.get('evaluation'): raise _ReportDone()
                     if a['status']!='completed': raise _ReportDone()
-                    self.ai_quota(a,'evaluation',20)
-                    a['evaluation']=self.ai.evaluate(a['role_snapshot'],a['answers']);self.store.save(a)
+                    self.store.quota('global-ai',int(os.getenv('MAX_AI_CALLS_PER_DAY','500')))
+                    a['evaluation']=self.ai.evaluate(a['role_snapshot'],a['answers'])
+                    self.quota_charge(a['id']+':evaluation')
+                    self.store.save(a)
                 # Report arrived after the transcript: push it to the existing
                 # ClickUp task now, without touching sync state or bumping version.
                 _clickup_sync(self, a)
@@ -332,9 +347,13 @@ class App:
                 pass
             except Exception as e:
                 n=row['failures']+1
+                # Quota rejections (429) are temporary by nature: retry flat and soon
+                # instead of exponentially backing off to an hour that traffic
+                # windows will never catch.
+                delay=300 if isinstance(e,APIError) and e.status==429 else min(3600,60*(2**min(n,6)))
                 with self.store.db() as db:
                     db.execute('UPDATE pending_reports SET failures=?,next_retry=? WHERE application_id=?',
-                               (n,time.time()+min(3600,60*(2**min(n,6))),aid))
+                               (n,time.time()+delay,aid))
                 LOG.warning('report_retry status=%s',e.status if isinstance(e,APIError) else 500)
                 continue
             with self.store.db() as db: db.execute('DELETE FROM pending_reports WHERE application_id=?',(aid,))
