@@ -10,13 +10,21 @@ from starlette.routing import Route, WebSocketRoute, Mount
 from . import v2_stream as bridge
 from .candidate_account import WorkspaceApp
 
-STAGING_ORIGIN='https://interviewportal-sm-1.onrender.com'
+RENDER_SERVICE_ORIGIN='https://interviewportal-sm-1.onrender.com'
+# Backwards-compatible alias: the original single-origin name.
+STAGING_ORIGIN=RENDER_SERVICE_ORIGIN
+# Public front-ends for this service. The custom domain is served alongside the
+# Render URL; both are valid same-origin hosts for candidates.
+PUBLIC_ORIGINS={
+    RENDER_SERVICE_ORIGIN,
+    'https://recrut.teamlens.co',
+}
 
 def validate_staging():
-    if os.getenv('RENDER_EXTERNAL_URL','').rstrip('/')!=STAGING_ORIGIN:
+    if os.getenv('RENDER_EXTERNAL_URL','').rstrip('/')!=RENDER_SERVICE_ORIGIN:
         raise RuntimeError('Workspace preview is restricted to the approved staging service.')
-    if os.getenv('APP_ORIGIN',STAGING_ORIGIN).rstrip('/')!=STAGING_ORIGIN:
-        raise RuntimeError('Workspace preview origin must match staging.')
+    if os.getenv('APP_ORIGIN',RENDER_SERVICE_ORIGIN).rstrip('/') not in PUBLIC_ORIGINS:
+        raise RuntimeError('Workspace preview origin must match a public front-end of this service.')
     if not os.getenv('DATABASE_URL','').strip():
         raise RuntimeError('A backed-up staging PostgreSQL database is required.')
     if os.getenv('TEAMRECRUT_STAGING_SCHEMA_APPROVED')!='true':

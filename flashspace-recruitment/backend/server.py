@@ -229,6 +229,10 @@ class App:
         self.ai=ai or AI();self.clickup=clickup or ClickUp(self.store);self.lock=threading.RLock();self.stop=threading.Event()
         self.origin=os.getenv('APP_ORIGIN') or os.getenv('RENDER_EXTERNAL_URL') or 'http://localhost:8000'
         self.origin=self.origin.rstrip('/');self.secure=self.origin.startswith('https://')
+        # Custom domains fronting this service are trusted for same-origin POSTs.
+        # APP_EXTRA_ORIGINS is a comma-separated allow list alongside APP_ORIGIN.
+        extra=[o.strip().rstrip('/') for o in os.getenv('APP_EXTRA_ORIGINS','').split(',') if o.strip()]
+        self.origins={self.origin,*extra}
         self.bootstrap_admin()
         self.last_http_activity=time.monotonic()
         self.job_wakeup=threading.Event()
@@ -463,7 +467,8 @@ class App:
                 if method not in ('GET','POST'): raise APIError(405,'Method not allowed.')
                 body={}
                 if method=='POST':
-                    if env.get('HTTP_ORIGIN')!=self.origin or env.get('HTTP_X_REQUESTED_WITH')!='Flashspace': raise APIError(403,'Request origin rejected. Reload this website and try again.')
+                    # A custom domain fronting this service must be trusted via APP_EXTRA_ORIGINS.
+                    if env.get('HTTP_ORIGIN') not in self.origins or env.get('HTTP_X_REQUESTED_WITH')!='Flashspace': raise APIError(403,'Request origin rejected. Reload this website and try again.')
                     length=int(env.get('CONTENT_LENGTH') or 0);limit=10*1024*1024 if path.endswith('/transcribe') else 32*1024
                     if length<0 or length>limit: raise APIError(413,'Request is too large. Keep recordings under two minutes.')
                     raw=env['wsgi.input'].read(length)

@@ -38,3 +38,5 @@ services:
         sync: false
       - key: MAX_AI_CALLS_PER_DAY
         value: "500"
+      - key: APP_EXTRA_ORIGINS
+        sync: false

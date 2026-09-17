@@ -17,6 +17,13 @@ class StagingGuardTests(unittest.TestCase):
             with self.subTest(key=key):
                 env=self.env();env[key]=value
                 with patch.dict(os.environ,env,clear=True),self.assertRaises(RuntimeError):runtime.validate_staging()
+    def test_custom_public_domain_accepted_as_app_origin(self):
+        # The candidate site is fronted by a custom domain alongside the Render URL.
+        for origin in ('https://recrut.teamlens.co', 'https://interviewportal-sm-1.onrender.com'):
+            with self.subTest(origin=origin):
+                env=self.env();env['APP_ORIGIN']=origin
+                with patch.dict(os.environ,env,clear=True):runtime.validate_staging()
+
     def test_missing_acknowledgement_rejected(self):
         env=self.env();del env['TEAMRECRUT_STAGING_SCHEMA_APPROVED']
         with patch.dict(os.environ,env,clear=True),self.assertRaises(RuntimeError):runtime.validate_staging()
