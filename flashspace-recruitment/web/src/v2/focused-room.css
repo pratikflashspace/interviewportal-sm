@@ -40,6 +40,9 @@
 .focused-room .room-question h3{font:500 clamp(19px,2vw,24px)/1.6 Manrope,sans-serif;letter-spacing:-.3px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
 .focused-room .room-state{display:table;margin:20px auto 12px;padding:10px 20px;border:1px solid #ddd3ed;border-radius:999px;background:#eee8fb;text-align:center;color:#5734a0;font-size:18px;font-weight:600;max-width:100%}
 .focused-room .room-preflight,.focused-room .room-help{padding:24px;background:#fff;border:1px solid var(--room-line);border-radius:14px;margin:24px 0}
+.focused-room .room-complete{padding:28px;background:#fff;border:1px solid #bfdcc9;border-radius:14px;margin:24px 0;text-align:center}
+.focused-room .room-complete h2{margin:0 0 12px}
+.focused-room .room-complete a{display:inline-block;margin-top:16px;text-decoration:none}
 .focused-room .room-preflight label{display:flex;gap:12px;align-items:flex-start;margin:16px 0;line-height:1.5;font-size:16px}
 .focused-room .room-preflight input[type=checkbox]{width:20px;height:20px;min-height:0;margin:3px 0 0;flex:none;accent-color:var(--room-accent)}
 .focused-room .room-preflight>button{margin:8px 10px 8px 0;max-width:100%}

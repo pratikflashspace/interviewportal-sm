@@ -71,6 +71,15 @@ class TapToSpeakContract(unittest.TestCase):
         # The old immediate-error path must be gone.
         self.assertNotIn("if(!answer){setError('No speech was captured yet. Answer out loud, then tap", src)
 
+    def test_completion_redirects_to_my_applications(self):
+        src = (ROOT / 'IntegratedInterview.jsx').read_text()
+        # After the last answer, the room must not strand the candidate: it shows a
+        # completion panel and auto-redirects to My Applications (where the status is
+        # visible) with an immediate link for the impatient.
+        self.assertIn('Interview complete', src)
+        self.assertIn("location.assign('/candidate/workspace/applications')", src)
+        self.assertIn('setTimeout', src)
+
     def test_speech_fetch_retries_once_before_silent_fallback(self):
         src = (ROOT / 'IntegratedInterview.jsx').read_text()
         # Regression (staging): domain questions lost voice for a stretch when a

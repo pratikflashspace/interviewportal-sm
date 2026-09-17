@@ -169,6 +169,8 @@ export default function IntegratedInterview(){
  }
  async function leave(){if(busy)return;if(!confirm('Exit this interview? Submitted answers stay saved; an unfinished answer is not a submitted answer.'))return;setBusy(true);paused.current=true;epoch.current++;ctl.current.pause();stopAudio();await closeSpeech();clearInterval(deviceTimer.current);try{await preflight.current.close();await drafts.current.chain;await voice.current?.stop();location.assign('/candidate/workspace/applications');}catch(e){setError('Could not finish saving: '+e.message);setStatus('technical-stop');}finally{setBusy(false);}}
  const aiSpeaking=status==='ai-speaking',listening=status==='listening',done=flow?.status==='completed';
+ const justFinished=done&&(status==='completed'||status==='answers-completed');
+ useEffect(()=>{if(!justFinished)return;const t=setTimeout(()=>{if(mounted.current)location.assign('/candidate/workspace/applications');},5000);return()=>clearTimeout(t);},[justFinished]);
  const label={'ready':'Ready when you are','ai-speaking':'Interviewer is speaking…','awaiting-tap':'Your turn — tap to speak','listening':'Listening… tap “I’m done speaking” when finished','voice-lost':'Voice dropped — your words are kept; reconnect or finish below','processing':'Processing your response…','saving':'Saving your response…','completed':'Interview submitted','answers-completed':'Answers submitted','technical-stop':'Technical interruption'}[status]||'Preparing interview…';
  const shown=disclosure.qid===flow?.active?.id?disclosure.count:0;
  return <main className="focused-room"><header><a href="/candidate/workspace/applications">teamrecrut · AI Interview</a><div><button onClick={()=>setHelp(!help)}>Help</button><button onClick={leave} disabled={busy}>Exit interview</button></div></header>
@@ -188,7 +190,7 @@ export default function IntegratedInterview(){
  {started&&!done&&(status==='listening'||(status==='voice-lost'&&text.trim()))&&<button className="room-done" onClick={doneSpeaking} disabled={busy}>I’m done speaking</button>}
  {started&&!done&&status!=='technical-stop'&&<section className="room-transcript"><h2>Your response</h2><p>{text||'Your speech transcript appears here.'}</p><small>{draftStatus}</small></section>}
  {status==='technical-stop'&&<section className="room-help"><p>No answer has been silently resubmitted. Contact support; automatic retry after an uncertain submission requires a separately approved recovery flow.</p></section>}
- {done&&<p>Your saved answers are submitted for human review.</p>}
+ {justFinished&&<section className="room-complete" role="status"><h2>Interview complete — thank you!</h2><p>Your answers have been submitted for human review. The hiring team will review your application and get back to you.</p><p className="tr-note">Taking you back to your applications…</p><a className="room-tap" href="/candidate/workspace/applications">Go to My Applications</a></section>}
  </>}
  </main>;
 }
