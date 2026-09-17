@@ -266,13 +266,16 @@ class App:
         self.store.quota('global-ai',int(os.getenv('MAX_AI_CALLS_PER_DAY','500')))
         self.store.quota(a['id']+':'+kind,limit,86400*7)
     def quota_charge(self,key,limit=20,seconds=86400*7):
-        """Charge a per-application allowance AFTER a successful AI call.
+        """Record a SUCCESSFUL AI call against a per-application allowance.
 
-        Failed or quota-rejected attempts must not consume the application's
-        own retry budget: without this a long outage permanently starves the
-        report lane even after the provider recovers.
+        This never gates or rejects the call — the call already succeeded.
+        Charging happens only now, so failed or quota-rejected attempts can
+        never starve the report lane. The row is a usage record, not a gate:
+        once a report exists the pending job is deleted and never retried, so
+        the limit only caps successful evaluations.
         """
-        self.store.quota(key,limit,seconds)
+        try:self.store.quota(key,limit,seconds)
+        except APIError:pass  # allowance row already at its cap; the report is still saved.
     def worker(self):
         while not self.stop.is_set():
             self.job_wakeup.wait(30);self.job_wakeup.clear()
