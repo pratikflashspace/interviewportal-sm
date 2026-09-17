@@ -57,6 +57,20 @@ class TapToSpeakContract(unittest.TestCase):
         # TurnController paused, so every speech event from Q2 onward was rejected.
         self.assertIn('await restore(next);ctl.current.begin();', src)
 
+    def test_done_tap_waits_for_late_final_transcript(self):
+        src = (ROOT / 'IntegratedInterview.jsx').read_text()
+        # Regression (staging, first question only): the coldest upstream STT
+        # connection emits the final transcript a moment after the candidate stops
+        # speaking, so a fast done-tap read an empty transcript, showed an error,
+        # and required a manual re-tap. doneSpeaking must now wait a grace window
+        # for the late final instead of erroring immediately.
+        self.assertIn('Still transcribing your last words', src)
+        self.assertIn('deadline', src)
+        # The mic socket must stay open during the grace window.
+        self.assertIn('const live=!!speech.current;', src)
+        # The old immediate-error path must be gone.
+        self.assertNotIn("if(!answer){setError('No speech was captured yet. Answer out loud, then tap", src)
+
     def test_provider_failures_are_recoverable_not_fatal(self):
         src = (ROOT / 'IntegratedInterview.jsx').read_text()
         # Regression (staging): a transient Sarvam TTS/socket hiccup mid-interview

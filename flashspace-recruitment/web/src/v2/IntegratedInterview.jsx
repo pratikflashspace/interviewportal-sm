@@ -117,8 +117,19 @@ export default function IntegratedInterview(){
  }
  async function doneSpeaking(){
   if(busy||saving.current||(status!=='listening'&&status!=='voice-lost'))return;
-  const answer=ctl.current.transcript().trim();
-  if(!answer){setError('No speech was captured yet. Answer out loud, then tap “I’m done speaking”.');setStatus('awaiting-tap');return;}
+  let answer=ctl.current.transcript().trim();
+  if(!answer){
+   // First-question race: the coldest upstream STT connection can emit the
+   // final transcript event a moment AFTER the candidate stops speaking and
+   // taps done. Wait briefly for that late final before declaring the answer
+   // empty; the mic socket is still open and events keep arriving.
+   const live=!!speech.current;
+   if(live){setError('');setStatus('processing');
+    const deadline=performance.now()+2500;
+    while(performance.now()<deadline){answer=ctl.current.transcript().trim();if(answer)break;await new Promise(r=>setTimeout(r,150));}
+   }
+   if(!answer){setError(live?'Still transcribing your last words. Tap “I’m done speaking” again in a moment, or keep speaking.':'No speech was captured yet. Answer out loud, then tap “I’m done speaking”.');setStatus(live?'listening':'awaiting-tap');return;}
+  }
   setStatus('processing');setBusy(true);
   try{await closeSpeech();}catch{}
   if(mounted.current)setBusy(false);
