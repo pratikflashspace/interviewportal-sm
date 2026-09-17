@@ -32,7 +32,13 @@ def validate_staging():
 
 async def startup():
     validate_staging()
+    # All public front-ends of this service are valid same-origin hosts for
+    # candidate POSTs; no extra Render configuration step is required for the
+    # custom domain. APP_EXTRA_ORIGINS (if set) adds more.
     from .hybrid_provider import hybrid_ai_or_evidence_only
+    configured=set(filter(None,(v.strip().rstrip('/') for v in os.getenv('APP_EXTRA_ORIGINS','').split(','))))
+    trusted=','.join(sorted({*PUBLIC_ORIGINS,os.getenv('APP_ORIGIN','').rstrip('/'),*configured}))
+    os.environ['APP_EXTRA_ORIGINS']=trusted
     bridge.backend=await asyncio.to_thread(WorkspaceApp,ai=hybrid_ai_or_evidence_only())
 
 app=Starlette(routes=[Route('/v2-pcm-worklet.js',bridge.pcm_worklet),

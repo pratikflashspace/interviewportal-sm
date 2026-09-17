@@ -42,4 +42,9 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 select.assert_called_once_with()
                 thread.assert_awaited_once_with(runtime.WorkspaceApp,ai='synthetic-ai')
                 self.assertEqual(runtime.bridge.backend,'synthetic-backend')
+                # startup() must wire every public front-end into the trusted
+                # origins so the custom domain needs no extra Render env var.
+                trusted=os.environ.get('APP_EXTRA_ORIGINS','')
+                self.assertIn('https://recrut.teamlens.co',trusted)
+                self.assertIn(runtime.PUBLIC_ORIGINS.__iter__().__next__(),trusted)
         finally:runtime.bridge.backend=previous
