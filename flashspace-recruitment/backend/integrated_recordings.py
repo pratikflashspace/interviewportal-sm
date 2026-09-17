@@ -147,7 +147,7 @@ class IntegratedApp(ConversationalApp):
             if action.startswith('chunk/'):
                 if m['owner']!=user['id']:raise APIError(404,'Recording not found.')
                 if env.get('REQUEST_METHOD')!='POST':raise APIError(405,'POST required.')
-                if env.get('HTTP_ORIGIN')!=self.origin or env.get('HTTP_X_REQUESTED_WITH')!='Flashspace':raise APIError(403,'Origin rejected.')
+                if env.get('HTTP_ORIGIN') not in self.origins or env.get('HTTP_X_REQUESTED_WITH')!='Flashspace':raise APIError(403,'Origin rejected.')
                 length=int(env.get('CONTENT_LENGTH') or 0)
                 if not 1<=length<=MAX_CHUNK:raise APIError(413,'Chunk exceeds 1 MB.')
                 data=env['wsgi.input'].read(length)

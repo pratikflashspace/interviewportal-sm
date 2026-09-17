@@ -96,7 +96,10 @@ async def pcm_worklet(request):
 
 async def voice(socket):
     aid=socket.path_params['aid']
-    if backend is None or socket.headers.get('origin')!=backend.origin or not re.fullmatch(r'[\w-]{1,80}',aid):
+    # origins is the trusted allow list (APP_ORIGIN + APP_EXTRA_ORIGINS); the
+    # .origin fallback keeps test doubles and older deployments working.
+    trusted=getattr(backend,'origins',None) or {backend.origin}
+    if backend is None or socket.headers.get('origin') not in trusted or not re.fullmatch(r'[\w-]{1,80}',aid):
         LOG.warning('voice_rejected reason=origin_or_configuration')
         await socket.close(code=1008);return
     env={'HTTP_COOKIE':socket.headers.get('cookie','')}

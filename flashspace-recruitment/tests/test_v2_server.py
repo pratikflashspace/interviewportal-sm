@@ -110,3 +110,48 @@ class StreamAuthTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(bridge,'backend',backend),patch.object(bridge,'connect') as upstream:
             await bridge.voice(socket)
         upstream.assert_not_called();socket.close.assert_awaited_once_with(code=1008)
+
+
+class VoiceExtraOriginTests(unittest.IsolatedAsyncioTestCase):
+    """The realtime STT websocket must accept every trusted public front-end."""
+
+    async def test_custom_domain_origin_passes_the_voice_gate(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, Mock, patch
+        import backend.v2_stream as bridge
+        backend = SimpleNamespace(
+            origin='https://interviewportal-sm-1.onrender.com',
+            origins={'https://interviewportal-sm-1.onrender.com', 'https://recrut.teamlens.co'},
+            # Auth always fails in this stub; the test distinguishes WHICH gate
+            # rejected the socket by the logged rejection reason.
+            current_user=Mock(side_effect=ValueError()),
+        )
+        socket = SimpleNamespace(path_params={'aid': 'test'},
+                                 headers={'origin': 'https://recrut.teamlens.co'},
+                                 close=AsyncMock())
+        with patch.object(bridge, 'backend', backend), patch.object(bridge, 'connect') as upstream, \
+                self.assertLogs('flashspace', level='WARNING') as logs:
+            await bridge.voice(socket)
+        self.assertFalse(any('origin_or_configuration' in line for line in logs.output),
+                         'custom-domain origin was rejected by the voice gate')
+        self.assertTrue(any('session_or_ownership' in line for line in logs.output),
+                        'expected to reach the auth gate, i.e. origin gate passed')
+        upstream.assert_not_called()
+
+    async def test_untrusted_origin_rejected_by_voice_gate(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+        import backend.v2_stream as bridge
+        backend = SimpleNamespace(
+            origin='https://interviewportal-sm-1.onrender.com',
+            origins={'https://interviewportal-sm-1.onrender.com', 'https://recrut.teamlens.co'},
+        )
+        socket = SimpleNamespace(path_params={'aid': 'test'},
+                                 headers={'origin': 'https://evil.example'},
+                                 close=AsyncMock())
+        with patch.object(bridge, 'backend', backend), patch.object(bridge, 'connect') as upstream, \
+                self.assertLogs('flashspace', level='WARNING') as logs:
+            await bridge.voice(socket)
+        socket.close.assert_awaited_once_with(code=1008)
+        self.assertTrue(any('origin_or_configuration' in line for line in logs.output))
+        upstream.assert_not_called()
