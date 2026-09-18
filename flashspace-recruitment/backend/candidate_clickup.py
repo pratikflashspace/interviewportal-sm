@@ -88,7 +88,9 @@ class CandidateFolderClickUp(WorkspaceClickUp):
                 fields['email' if 'Email' in spec['name'] else 'phone'] = match[0]['id']
             else:
                 created = self.call('POST', f'list/{lid}/field', spec)
-                fields['email' if 'Email' in spec['name'] else 'phone'] = created['id']
+                # Creation responses nest the field object under 'field'.
+                fid = created.get('id') or (created.get('field') or {}).get('id')
+                fields['email' if 'Email' in spec['name'] else 'phone'] = fid
         self._save_setting(FIELD_KEY + lid, json.dumps(fields))
         return fields
 
@@ -96,12 +98,16 @@ class CandidateFolderClickUp(WorkspaceClickUp):
         """Write email/phone custom-field values onto both candidate tasks."""
         try:
             fields = self.ensure_contact_fields(lid)
-            payload = {fields['email']: a.get('email', ''),
-                       fields['phone']: a.get('_phone') or ''}
+            values = (('email', a.get('email', '')), ('phone', a.get('_phone') or ''))
             for name in (self.profile_task_name(a), self.interview_task_name(a)):
                 tid, _ = self.find_task(lid, name)
-                if tid:
-                    self.call('PUT', f'task/{tid}', payload)
+                if not tid:
+                    continue
+                for key, value in values:
+                    if value:
+                        # Set Custom Field Value is a POST to the dedicated
+                        # per-field endpoint; task PUTs ignore field values.
+                        self.call('POST', f'task/{tid}/field/{fields[key]}', {'value': value})
         except APIError:
             # Custom fields are a convenience for the team's email flow; a
             # failure never blocks the core sync.
@@ -244,7 +250,9 @@ class CandidateFolderClickUp(WorkspaceClickUp):
             with self.store.db() as db:
                 row = db.execute('SELECT data FROM workspace_profiles WHERE user_id=?', (a['user_id'],)).fetchone()
             profile = json.loads(row['data']) if row else {}
-            a = {**a, '_phone': profile.get('phone') or profile.get('personal', {}).get('phone') or ''}
+            raw = profile.get('phone') or profile.get('personal', {}).get('phone') or ''
+            # ClickUp's phone field requires E.164; candidates are Indian 10-digit.
+            a = {**a, '_phone': ('+91' + raw) if re.fullmatch(r'\d{10}', raw) else raw}
         except Exception:
             pass
         # Profile task: find-or-create once, then refresh description.

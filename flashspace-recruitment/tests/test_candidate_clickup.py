@@ -56,6 +56,13 @@ class FakeFolderAPI:
             url = 'https://clickup.example/t/' + tid
             self.lists[lid]['tasks'][tid] = {'name': data['name'], 'description': data.get('description', ''), 'url': url, 'fields': {}}
             return {'id': tid, 'name': data['name'], 'url': url}
+        if path.startswith('task/') and '/field/' in path and method in ('POST', 'PUT'):
+            tid = path.split('/')[1]; fid = path.split('/')[3]
+            for l in self.lists.values():
+                if tid in l['tasks']:
+                    l['tasks'][tid].setdefault('fields', {})[fid] = (data or {}).get('value')
+                    return {'id': tid}
+            raise APIError(500, 'task missing in fake')
         if method == 'PUT' and path.startswith('task/'):
             tid = path.split('/')[1]
             for l in self.lists.values():
@@ -183,8 +190,8 @@ class CandidateFolderTests(unittest.TestCase):
         for t in (profile, interview):
             self.assertEqual(t.get('fields', {}).get(fields['Candidate Email']), 'ravi@example.com',
                              'email custom field must carry the candidate address')
-            self.assertEqual(t.get('fields', {}).get(fields['Candidate Phone']), '9876543210',
-                             'phone custom field must carry the candidate number')
+            self.assertEqual(t.get('fields', {}).get(fields['Candidate Phone']), '+919876543210',
+                             'phone custom field must carry the E.164-formatted candidate number')
 
     def test_one_list_two_roles_profile_plus_interview_tasks_unchanged_marker(self):
         pass  # (namespace kept; see test_one_list_two_roles_profile_plus_interview_tasks)
