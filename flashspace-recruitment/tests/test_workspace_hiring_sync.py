@@ -87,8 +87,8 @@ class HiringSyncTests(ws.WorkspaceTests):
         self.assertEqual(self.app.store.get(aid)['sync_status'], 'Synced')
         # One candidate List; Profile + Interview tasks inside it.
         self.assertEqual(len(self.api.lists), 1, 'exactly one List for this candidate')
-        self.assertEqual(len(self.api.task_named('Profile')), 1)
-        interviews = self.api.task_named('Interview')
+        self.assertEqual(len(self.api.task_named('Candidate Profile')), 1)
+        interviews = self.api.task_named('Candidate Interview')
         self.assertEqual(len(interviews), 1)
         for text in ('Current hiring stage: Shortlisted', 'Synthetic preserved answer',
                      'Synthetic preserved report', 'INTERVIEW RECORDING'):
@@ -109,7 +109,7 @@ class HiringSyncTests(ws.WorkspaceTests):
             db.execute('UPDATE applications SET next_retry=0 WHERE id=?', (aid,))
         self.app.work_once()
         self.assertEqual(self.app.store.get(aid)['sync_status'], 'Synced')
-        self.assertEqual(len(self.api.task_named('Interview')), 1, 'no duplicate Interview task after retry')
+        self.assertEqual(len(self.api.task_named('Candidate Interview')), 1, 'no duplicate Interview task after retry')
 
     def test_stale_decision_does_not_duplicate_event_or_queue(self):
         aid = self.prepare(); self.move(aid); self.app.work_once(); before = self.app.store.get(aid)
@@ -117,7 +117,7 @@ class HiringSyncTests(ws.WorkspaceTests):
         after = self.app.store.get(aid)
         self.assertEqual(after['version'], before['version']); self.assertEqual(after['sync_status'], 'Synced')
         self.assertEqual(len(self.app.tracking(after)['events']), 1)
-        self.assertEqual(len(self.api.task_named('Interview')), 1)
+        self.assertEqual(len(self.api.task_named('Candidate Interview')), 1)
 
     def test_stage_audit_and_queue_roll_back_together(self):
         aid = self.prepare(); before = self.app.store.get(aid); original = self.app.store.db
@@ -162,7 +162,7 @@ class HiringSyncTests(ws.WorkspaceTests):
         self.assertEqual(self.app.store.get(aid)['sync_status'], 'Queued')
         self.app.work_once()
         self.assertEqual(self.app.store.get(aid)['sync_status'], 'Synced')
-        interviews = self.api.task_named('Interview')
+        interviews = self.api.task_named('Candidate Interview')
         self.assertEqual(len(interviews), 1)
         self.assertIn('Current hiring stage: Hired', interviews[0]['description'])
 

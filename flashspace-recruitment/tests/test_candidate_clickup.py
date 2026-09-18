@@ -152,12 +152,12 @@ class CandidateFolderTests(unittest.TestCase):
         self.assertEqual(len({t['list'] for t in lists}), 1)
         task_names = sorted(t['name'] for t in lists)
         self.assertEqual(task_names, sorted([
-            'Profile — Ravi Kumar · FS-' + self._uid()[:8],
-            'Interview — Growth & Partnerships · FS-' + aid1[:8]]))
-        profile = next(t for t in lists if t['name'].startswith('Profile'))
+            'Candidate Profile — Ravi Kumar · FS-' + self._uid()[:8],
+            'Candidate Interview summary and transcript — Growth & Partnerships · FS-' + aid1[:8]]))
+        profile = next(t for t in lists if t['name'].startswith('Candidate Profile'))
         self.assertIn('TEAMRECRUT CANDIDATE PROFILE', profile['description'])
         self.assertIn('Email: candidate@example.com'.replace('candidate', 'ravi'), profile['description'])
-        interview = next(t for t in lists if t['name'].startswith('Interview'))
+        interview = next(t for t in lists if t['name'].startswith('Candidate Interview'))
         self.assertIn('FULL INTERVIEW TRANSCRIPT', interview['description'])
         self.assertIn('Synthetic response 9', interview['description'])
         self.assertIn('Synthetic experience for per-candidate', interview['description'])
@@ -195,11 +195,11 @@ class CandidateFolderTests(unittest.TestCase):
         self.app.work_once()
         self.assertEqual(len(self.api.lists), before_lists, 'no second List for the same candidate')
         tasks = [t['name'] for t in self.api.all_tasks()]
-        profile_names = [n for n in tasks if n.startswith('Profile')]
+        profile_names = [n for n in tasks if n.startswith('Candidate Profile')]
         self.assertEqual(len(profile_names), 1, 'Profile task is never duplicated')
-        interview_names = [n for n in tasks if n.startswith('Interview')]
+        interview_names = [n for n in tasks if n.startswith('Candidate Interview')]
         self.assertEqual(len(interview_names), 2, 'one Interview task per applied role')
-        self.assertIn('Interview — AI Marketing', interview_names[0] + interview_names[1])
+        self.assertIn('Candidate Interview summary and transcript — AI Marketing', interview_names[0] + interview_names[1])
         self.app = saved_app
 
     def test_sync_failure_keeps_application_retry_pending(self):
@@ -228,7 +228,7 @@ class CandidateFolderTests(unittest.TestCase):
         self.ok('/api/workspace/recruiter/applications/' + aid + '/stage', {'stage': 'shortlisted', 'version': 0})
         self.app.work_once()
         tasks = self.api.all_tasks()
-        interview = next(t for t in tasks if t['name'].startswith('Interview'))
+        interview = next(t for t in tasks if t['name'].startswith('Candidate Interview'))
         self.assertIn('Current hiring stage: Shortlisted', interview['description'])
 
     def test_profile_sections_from_real_profile_data(self):
@@ -240,7 +240,7 @@ class CandidateFolderTests(unittest.TestCase):
         f = self.apply_v2()
         self.complete_interview('/api/v2/applications/' + f['application_id'], f)
         self.app.work_once()
-        profile = next(t for t in self.api.all_tasks() if t['name'].startswith('Profile'))
+        profile = next(t for t in self.api.all_tasks() if t['name'].startswith('Candidate Profile'))
         self.assertIn('SKILLS', profile['description'])
         self.assertIn('Python, SQL', profile['description'])
 
@@ -275,7 +275,7 @@ class FocusLossTests(CandidateFolderTests):
                                            'focus_losses': 1 if i == 0 else 0})
             self.assertEqual(f['answers'][-1].get('focus_losses'), 1 if i == 0 else 0)
         self.app.work_once()
-        interview = next(t for t in self.api.all_tasks() if t['name'].startswith('Interview'))
+        interview = next(t for t in self.api.all_tasks() if t['name'].startswith('Candidate Interview'))
         self.assertIn('left or switched away from the interview window 1 time(s)', interview['description'])
 
     def test_focus_loss_validation(self):

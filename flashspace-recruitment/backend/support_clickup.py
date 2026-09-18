@@ -1,8 +1,8 @@
 """Flat ClickUp support queue for candidate queries (approved 17 September 2026).
 
 Hierarchy: Space "FlashSpace" (discovered from the candidate folder) ->
-Folder "Teamrecrut Support" -> List "Candidate Queries" -> one task per
-candidate support request.
+Folder "Teamrecrut — Candidate Queries" -> List "Candidate Queries" -> one
+task per candidate support request.
 
 Design rules (same as the per-candidate folder sync):
 - Remote identity (folder/list/task ids) is persisted immediately after
@@ -21,7 +21,7 @@ import re
 import threading
 from .server import APIError
 
-SUPPORT_FOLDER_NAME = 'Teamrecrut Support'
+SUPPORT_FOLDER_NAME = 'Teamrecrut — Candidate Queries'
 SUPPORT_LIST_NAME = 'Candidate Queries'
 CANDIDATE_FOLDER_ENV = 'CLICKUP_CANDIDATE_FOLDER_ID'
 SPACE_KEY = 'support-space-id'
@@ -76,7 +76,7 @@ class SupportQueueClickUp:
             folders = self.clickup.call('GET', f'space/{space}/folder?archived=false').get('folders', [])
             match = [f for f in folders if f.get('name') == SUPPORT_FOLDER_NAME]
             if len(match) > 1:
-                raise APIError(409, 'Multiple Teamrecrut Support folders. Administrator must reconcile them.')
+                raise APIError(409, 'Multiple Teamrecrut — Candidate Queries folders. Administrator must reconcile them.')
             if match:
                 found = match[0]
             else:

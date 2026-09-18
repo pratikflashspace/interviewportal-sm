@@ -1,7 +1,8 @@
 """Per-candidate ClickUp structure (approved 14 September 2026).
 
-Hierarchy: Space "FlashSpace" -> Folder "Teamrecrut - Candidates" ->
-one List per candidate -> Profile task + one Interview task per applied role.
+Hierarchy: Space "FlashSpace" -> Folder "Teamrecrut — Candidate" ->
+one List per candidate -> "Candidate Profile" task + one "Candidate
+Interview summary and transcript" task per applied role.
 
 Design rules carried over from the role-list sync:
 - Remote identity (task/list ids) is persisted immediately after creation and
@@ -44,7 +45,7 @@ class CandidateFolderClickUp(WorkspaceClickUp):
     def candidate_folder_id(self):
         folder = os.getenv(CANDIDATE_FOLDER_ENV, '')
         if not re.fullmatch(r'\d+', folder):
-            raise APIError(503, 'Configure CLICKUP_CANDIDATE_FOLDER_ID (Teamrecrut - Candidates folder) in Render.')
+            raise APIError(503, 'Configure CLICKUP_CANDIDATE_FOLDER_ID (Teamrecrut — Candidate folder) in Render.')
         return folder
 
     def candidate_list_id(self, a):
@@ -70,11 +71,11 @@ class CandidateFolderClickUp(WorkspaceClickUp):
     # ---- task identity ------------------------------------------------------
     @staticmethod
     def profile_task_name(a):
-        return f"Profile — {a['name'][:80]} · FS-{a['user_id'][:8]}"
+        return f"Candidate Profile — {a['name'][:70]} · FS-{a['user_id'][:8]}"
 
     @staticmethod
     def interview_task_name(a):
-        return f"Interview — {a['role_title'][:60]} · FS-{a['id'][:8]}"
+        return f"Candidate Interview summary and transcript — {a['role_title'][:40]} · FS-{a['id'][:8]}"
 
     def find_task(self, lid, name):
         """Scan only this candidate's List; return (task_id, url) or (None, None)."""
