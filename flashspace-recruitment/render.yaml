@@ -40,3 +40,23 @@ services:
         value: "500"
       - key: APP_EXTRA_ORIGINS
         sync: false
+      # Candidate outreach on hiring decisions (email + WhatsApp).
+      # All optional: channels are skipped until configured.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: OUTREACH_EMAIL_FROM
+        sync: false
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_ID
+        sync: false
+      - key: WHATSAPP_TEMPLATE_NAME
+        sync: false
+      - key: WHATSAPP_TEMPLATE_LANG
+        value: "en"

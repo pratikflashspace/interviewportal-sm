@@ -29,7 +29,8 @@ class WorkspaceClickUp(InterviewRecordingClickUp):
 
 def save_hiring_stage(app,aid,user,body):
     stage=body.get('stage');version=body.get('version')
-    if set(body)!={'stage','version'} or not isinstance(stage,str) or stage not in STAGE_LABELS or type(version) is not int or version<0:
+    note=body.get('note','')
+    if set(body)-{'stage','version','note'} or not isinstance(stage,str) or stage not in STAGE_LABELS or type(version) is not int or version<0 or not isinstance(note,str) or len(note)>1000:
         raise APIError(400,'Choose a supported hiring stage and version.')
     if not user['admin'] or user['email'].strip().lower()!=app.recruiter_email():
         raise APIError(403,'Recruiter access required.')
@@ -50,5 +51,15 @@ def save_hiring_stage(app,aid,user,body):
         # In the SAME transaction as stage + audit event: a crash cannot save a
         # decision without leaving a durable sync job. Preserve remote task id.
         db.execute('UPDATE applications SET version=version+1,next_retry=0,failures=0,sync_error=NULL WHERE id=?',(aid,))
+    # Candidate outreach (email + WhatsApp) for the decision. Never blocks the
+    # save; status is returned to the recruiter. Skipped for 'applied'.
+    outreach=None
+    if stage in ('shortlisted','contacted','hired','rejected'):
+        try:
+            from .outreach import notify_decision
+            outreach=notify_decision(app,app.store.get(aid),stage,note)
+        except Exception:outreach=None
     app.job_wakeup.set()
-    return app.tracking(app.store.get(aid))
+    result=app.tracking(app.store.get(aid))
+    if outreach is not None:result['outreach']=outreach
+    return result
