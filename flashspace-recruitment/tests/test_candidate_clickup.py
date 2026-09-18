@@ -37,6 +37,15 @@ class FakeFolderAPI:
             lid = self._new_id()
             self.lists[lid] = {'name': data['name'], 'tasks': {}}
             return {'id': lid, 'name': data['name']}
+        if path.startswith('list/') and path.endswith('/field'):
+            lid = path.split('/')[1]
+            bucket = self.lists.setdefault(lid, {'name': '', 'tasks': {}, 'fields': {}})
+            fields = bucket.setdefault('fields', {})
+            if method == 'GET':
+                return {'fields': [{'id': fid, 'name': f['name']} for fid, f in fields.items()]}
+            fid = self._new_id()
+            fields[fid] = {'name': data['name'], 'type': data.get('type')}
+            return {'id': fid, 'name': data['name']}
         if method == 'GET' and path.startswith('list/') and '/task' in path:
             lid = path.split('/')[1]
             tasks = self.lists.get(lid, {}).get('tasks', {})
@@ -45,14 +54,19 @@ class FakeFolderAPI:
             lid = path.split('/')[1]
             tid = self._new_id()
             url = 'https://clickup.example/t/' + tid
-            self.lists[lid]['tasks'][tid] = {'name': data['name'], 'description': data.get('description', ''), 'url': url}
+            self.lists[lid]['tasks'][tid] = {'name': data['name'], 'description': data.get('description', ''), 'url': url, 'fields': {}}
             return {'id': tid, 'name': data['name'], 'url': url}
         if method == 'PUT' and path.startswith('task/'):
             tid = path.split('/')[1]
             for l in self.lists.values():
                 if tid in l['tasks']:
-                    l['tasks'][tid]['name'] = data['name']
-                    l['tasks'][tid]['description'] = data.get('description', '')
+                    if 'name' in data:
+                        l['tasks'][tid]['name'] = data['name']
+                    if 'description' in data:
+                        l['tasks'][tid]['description'] = data['description']
+                    for k, v in data.items():
+                        if k not in ('name', 'description'):
+                            l['tasks'][tid].setdefault('fields', {})[k] = v
                     return {'id': tid, 'url': l['tasks'][tid].get('url')}
             raise APIError(500, 'task missing in fake')
         raise APIError(500, 'unhandled fake route: %s %s' % (method, path))
@@ -161,6 +175,19 @@ class CandidateFolderTests(unittest.TestCase):
         self.assertIn('FULL INTERVIEW TRANSCRIPT', interview['description'])
         self.assertIn('Synthetic response 9', interview['description'])
         self.assertIn('Synthetic experience for per-candidate', interview['description'])
+        # Contact custom fields (Candidate Email / Candidate Phone) exist on the
+        # List and are populated on both tasks for ClickUp's in-task Email flow.
+        fields = {f['name']: fid for fid, f in self.api.lists[profile['list']].get('fields', {}).items()}
+        self.assertIn('Candidate Email', fields)
+        self.assertIn('Candidate Phone', fields)
+        for t in (profile, interview):
+            self.assertEqual(t.get('fields', {}).get(fields['Candidate Email']), 'ravi@example.com',
+                             'email custom field must carry the candidate address')
+            self.assertEqual(t.get('fields', {}).get(fields['Candidate Phone']), '9876543210',
+                             'phone custom field must carry the candidate number')
+
+    def test_one_list_two_roles_profile_plus_interview_tasks_unchanged_marker(self):
+        pass  # (namespace kept; see test_one_list_two_roles_profile_plus_interview_tasks)
 
     def _uid(self, email='ravi@example.com'):
         with self.app.store.db() as db:

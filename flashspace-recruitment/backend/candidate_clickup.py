@@ -20,6 +20,7 @@ from .workspace_hiring_sync import WorkspaceClickUp, STAGE_LABELS
 
 CANDIDATE_FOLDER_ENV = 'CLICKUP_CANDIDATE_FOLDER_ID'
 LIST_KEY = 'candidate-list:'  # settings key prefix: candidate-list:<user_id>
+FIELD_KEY = 'candidate-fields:'  # settings key prefix: candidate-fields:<list_id>
 MAX_SCAN_PAGES = 50
 
 SECTION_ORDER = [('personal', 'PERSONAL'), ('summary', 'SUMMARY'), ('education', 'EDUCATION'),
@@ -66,7 +67,45 @@ class CandidateFolderClickUp(WorkspaceClickUp):
                 'name': name,
                 'content': 'One List per candidate. Profile task plus one Interview task per applied role. Managed by Teamrecrut.'})
         self._save_setting(LIST_KEY + a['user_id'], found['id'])
-        return str(found['id'])
+        return found['id']
+
+    def ensure_contact_fields(self, lid):
+        """Email + Phone custom fields on the candidate's List (find-or-create).
+
+        These power ClickUp's native in-task Email: with the address on the
+        task, ClickUp auto-suggests the candidate as recipient so the team
+        can click Send without copy-pasting from the description.
+        """
+        cached = json.loads(self._setting(FIELD_KEY + lid) or 'null')
+        if cached and cached.get('email') and cached.get('phone'):
+            return cached
+        fields = {}
+        for spec in ({'name': 'Candidate Email', 'type': 'email'},
+                     {'name': 'Candidate Phone', 'type': 'phone'}):
+            found = self.call('GET', f'list/{lid}/field')['fields']
+            match = [f for f in found if f.get('name') == spec['name']]
+            if match:
+                fields['email' if 'Email' in spec['name'] else 'phone'] = match[0]['id']
+            else:
+                created = self.call('POST', f'list/{lid}/field', spec)
+                fields['email' if 'Email' in spec['name'] else 'phone'] = created['id']
+        self._save_setting(FIELD_KEY + lid, json.dumps(fields))
+        return fields
+
+    def set_contact_fields(self, lid, a):
+        """Write email/phone custom-field values onto both candidate tasks."""
+        try:
+            fields = self.ensure_contact_fields(lid)
+            payload = {fields['email']: a.get('email', ''),
+                       fields['phone']: a.get('_phone') or ''}
+            for name in (self.profile_task_name(a), self.interview_task_name(a)):
+                tid, _ = self.find_task(lid, name)
+                if tid:
+                    self.call('PUT', f'task/{tid}', payload)
+        except APIError:
+            # Custom fields are a convenience for the team's email flow; a
+            # failure never blocks the core sync.
+            pass
 
     # ---- task identity ------------------------------------------------------
     @staticmethod
@@ -200,6 +239,14 @@ class CandidateFolderClickUp(WorkspaceClickUp):
             stage = None
         if stage and stage in STAGE_LABELS:
             a = {**a, '_hiring_stage': stage}
+        # Candidate phone for the ClickUp email/phone custom fields.
+        try:
+            with self.store.db() as db:
+                row = db.execute('SELECT data FROM workspace_profiles WHERE user_id=?', (a['user_id'],)).fetchone()
+            profile = json.loads(row['data']) if row else {}
+            a = {**a, '_phone': profile.get('phone') or profile.get('personal', {}).get('phone') or ''}
+        except Exception:
+            pass
         # Profile task: find-or-create once, then refresh description.
         pname = self.profile_task_name(a)
         ptid, _ = self.find_task(lid, pname)
@@ -219,6 +266,9 @@ class CandidateFolderClickUp(WorkspaceClickUp):
             result = self.call('POST', f'list/{lid}/task', payload_i)
             itid = result['id']
         iurl = result.get('url') or iurl
+        # Structured contact fields on both tasks: powers ClickUp's in-task
+        # Email (auto-suggested recipient) without copy-paste.
+        self.set_contact_fields(lid, a)
         with self.store.db() as db:
             db.execute('UPDATE applications SET task_id=?,task_url=? WHERE id=?', (str(itid), iurl, a['id']))
         return str(itid), iurl
