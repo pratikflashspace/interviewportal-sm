@@ -23,6 +23,12 @@ class WorkspaceFeatures:
         if type(self.clickup) is InterviewRecordingClickUp:
             from .candidate_clickup import CandidateFolderClickUp
             self.clickup = CandidateFolderClickUp(self.store)
+        # Flat support queue (approved 17 Sep 2026): every candidate query
+        # becomes one task in the Teamrecrut Support folder's Candidate
+        # Queries list. Reuses the shared ClickUp auth/call from self.clickup.
+        if not hasattr(self, 'support_clickup') or self.support_clickup is None:
+            from .support_clickup import SupportQueueClickUp
+            self.support_clickup = SupportQueueClickUp(self.store, self.clickup)
 
     def record(self,key,default):
         with self.store.db() as db:row=db.execute('SELECT data,version FROM workspace_records WHERE key=?',(key,)).fetchone()
@@ -119,6 +125,11 @@ class WorkspaceFeatures:
                 if not isinstance(subject,str) or not 3<=len(subject.strip())<=150 or not isinstance(message,str) or not 10<=len(message.strip())<=4000:raise APIError(400,'Enter a subject (3–150 characters) and message (10–4000 characters).')
                 tid=uuid.uuid4().hex
                 with self.store.db() as db:db.execute('INSERT INTO workspace_support VALUES (?,?,?,?,?,?,?)',(tid,u['id'],subject.strip(),message.strip(),'open','',now()))
+                # ClickUp sync is best-effort: the ticket is already saved. A
+                # ClickUp outage must never block the candidate's request.
+                try:
+                    self.support_clickup.sync_ticket({'id':tid,'user_id':u['id'],'name':u.get('name',''),'email':u['email'],'subject':subject.strip(),'message':message.strip(),'status':'open','reply':'','created':now()})
+                except Exception:pass
                 return {'id':tid,'status':'open'},[]
             raise APIError(405,'Method not allowed.')
         match=re.fullmatch(r'/api/workspace/recruiter/support/([a-f0-9]{32})',path)
@@ -126,7 +137,13 @@ class WorkspaceFeatures:
             self.current_user(env);reply=body.get('reply');status=body.get('status')
             if status not in ('open','resolved') or not isinstance(reply,str) or not 1<=len(reply.strip())<=4000:raise APIError(400,'Enter a reply and valid status.')
             with self.store.db() as db:
-                row=db.execute('UPDATE workspace_support SET reply=?,status=? WHERE id=? RETURNING id',(reply.strip(),status,match[1])).fetchone()
+                row=db.execute('UPDATE workspace_support SET reply=?,status=? WHERE id=? RETURNING id,user_id,subject,message,status,reply,created',(reply.strip(),status,match[1])).fetchone()
                 if not row:raise APIError(404,'Support request not found.')
+                ticket=dict(row)
+                owner=db.execute('SELECT email,name FROM users WHERE id=?',(ticket['user_id'],)).fetchone()
+            if owner:ticket['email']=owner['email'];ticket['name']=owner['name'] or 'Candidate'
+            # Best-effort update of the ClickUp task with the recruiter reply.
+            try:self.support_clickup.sync_ticket(ticket)
+            except Exception:pass
             return {'ok':True},[]
         return super().route(env,body)
