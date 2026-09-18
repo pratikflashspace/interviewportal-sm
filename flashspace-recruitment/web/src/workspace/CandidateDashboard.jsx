@@ -14,7 +14,7 @@ export default function CandidateDashboard(){
  const [selected,setSelected]=useState(null),[applyRole,setApplyRole]=useState(null),[actionError,setActionError]=useState(''),[busy,setBusy]=useState(false);
  const appsRef=useRef(null);
  useEffect(()=>{
-  const controller=new AbortController();let alive=true;const timer=setTimeout(()=>controller.abort(),30000);
+  const controller=new AbortController();let alive=true;const timer=setTimeout(()=>controller.abort(),20000);
   setLoading(true);setError('');setData(null);setSelected(null);setApplyRole(null);appsRef.current=null;
   async function load(){try{
    const identity=await dashboardRequest('/me',{signal:controller.signal});if(!alive)return;

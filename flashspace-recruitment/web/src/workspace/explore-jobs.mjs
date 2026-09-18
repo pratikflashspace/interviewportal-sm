@@ -58,7 +58,9 @@ export function existingDestination(apps,roleId){
  if(found.status==='completed')return '/candidate/workspace/applications';
  return (found.flow_version===2?'/interview-v2?application=':'/candidate/workspace/legacy?application=')+encodeURIComponent(found.id);
 }
-export async function jobsRequest(path,{body,signal,fetcher=globalThis.fetch,timeoutMs=path==='/logout'?65000:30000}={}){
+export async function jobsRequest(path,{body,signal,fetcher=globalThis.fetch,timeoutMs=path==='/logout'?65000:12000}={}){
+ // 12s: fail fast on a stalled request so the page can offer a retry instead
+ // of leaving the candidate on "Checking your candidate account..." for 30s.
  if(!['/me','/roles','/applications','/logout','/v2/applications'].includes(path))throw Error('Unsupported jobs request.');
  const c=new AbortController(),abort=()=>c.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)c.abort();const timer=setTimeout(abort,timeoutMs);
  try{
