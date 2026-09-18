@@ -12,7 +12,7 @@ class AccountTests(unittest.TestCase):
  login_recruiter=fixture.WorkspaceTests.login_recruiter
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
-  p=patch.dict(os.environ,{'APP_ORIGIN':'https://test.example'});p.start();self.addCleanup(p.stop)
+  p=patch.dict(os.environ,{'APP_ORIGIN':'https://test.example','CLICKUP_API_TOKEN':''});p.start();self.addCleanup(p.stop)
   self.app=WorkspaceApp(db_path=self.tmp.name+'/a.db',roles=[fixture.ROLE],ai=fixture.FakeAI(),start_worker=False,recording_root=self.tmp.name+'/recordings');self.cookie=''
  def test_method_metadata_and_privacy(self):
   path='/api/workspace/candidate/account';self.assertEqual(self.req(path)['status'],401)

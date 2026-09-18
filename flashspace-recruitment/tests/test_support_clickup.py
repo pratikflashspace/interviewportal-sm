@@ -56,7 +56,8 @@ class SupportQueueTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.env = patch.dict(os.environ, {'APP_ORIGIN': 'https://test.example',
-                                           'CLICKUP_CANDIDATE_FOLDER_ID': '901612030752'})
+                                           'CLICKUP_CANDIDATE_FOLDER_ID': '901612030752',
+                                           'CLICKUP_API_TOKEN': ''})
         self.env.start(); self.addCleanup(self.env.stop)
         self.app = WorkspaceApp(db_path=self.tmp.name + '/test.db', roles=[ROLE],
                                 ai=FakeAI(), start_worker=False,

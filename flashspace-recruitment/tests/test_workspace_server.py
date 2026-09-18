@@ -12,7 +12,9 @@ from test_backend import FakeAI, ROLE
 class WorkspaceTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
-        self.env=patch.dict(os.environ,{'APP_ORIGIN':'https://test.example','CLICKUP_CANDIDATE_FOLDER_ID':'901612030752'})
+        # Tests must NEVER contact the real ClickUp: strip credentials the
+        # developer's shell may export, so best-effort syncs fail closed.
+        self.env=patch.dict(os.environ,{'APP_ORIGIN':'https://test.example','CLICKUP_CANDIDATE_FOLDER_ID':'901612030752','CLICKUP_API_TOKEN':''},clear=False)
         self.env.start();self.addCleanup(self.env.stop)
         self.app=WorkspaceApp(db_path=self.tmp.name+'/test.db',roles=[ROLE],ai=FakeAI(),start_worker=False,recording_root=self.tmp.name+'/recordings')
         self.cookie=''
