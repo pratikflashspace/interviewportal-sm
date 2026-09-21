@@ -1,2 +1,5 @@
 web/node_modules/
 .venv/
+*.env
+*.env.*
+cache/
