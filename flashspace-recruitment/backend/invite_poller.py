@@ -40,6 +40,10 @@ import time
 import urllib.request
 
 INVITE_LINK = 'https://recrut.teamlens.co/'
+# Approved Meta WhatsApp template (created 21 September 2026 by Pratik).
+WHATSAPP_TEMPLATE_NAME = 'teamrecrut_invite'
+WHATSAPP_TEMPLATE_CATEGORY = 'UTILITY'
+WHATSAPP_TEMPLATE_LANG = 'en'
 ATS_LIST_ENV = 'ATS_LIST_ID'
 FOLDER_ENV = 'CLICKUP_CANDIDATE_FOLDER_ID'
 FIELD_NAME = 'Interview Invite'
@@ -144,13 +148,33 @@ class ChatwootClient:
             raise PollerError('Chatwoot conversation create returned no id.')
         return cid
 
-    def send_whatsapp(self, phone, name, text):
-        """Find-or-create contact + conversation in the WhatsApp inbox, then send."""
+    def send_whatsapp(self, phone, name, text, template_vars=None):
+        """Find-or-create contact + conversation in the WhatsApp inbox, then send.
+
+        Template mode (template_vars given) uses the approved Meta template via
+        template_params; plain text mode is kept for the 24-hour reply window.
+        Returns (conversation_id, message_id)."""
         contact_id = self.find_or_create_contact(phone, name)
         conversation_id = self.create_conversation(contact_id)
-        self.call('POST', f'conversations/{conversation_id}/messages',
-                  {'content': text, 'message_type': 'outgoing'})
-        return conversation_id
+        payload = {'content': text, 'message_type': 'outgoing'}
+        if template_vars:
+            payload['template_params'] = {
+                'name': WHATSAPP_TEMPLATE_NAME,
+                'category': WHATSAPP_TEMPLATE_CATEGORY,
+                'language': WHATSAPP_TEMPLATE_LANG,
+                'processed_params': {'body': template_vars},
+            }
+        _, created = self.call('POST', f'conversations/{conversation_id}/messages', payload)
+        message_id = created.get('id')
+        return conversation_id, message_id
+
+    def message_status(self, conversation_id, message_id):
+        """Read back the stored message; return its delivery status string."""
+        _, data = self.call('GET', f'conversations/{conversation_id}/messages')
+        for m in data.get('payload') or []:
+            if str(m.get('id')) == str(message_id):
+                return m.get('status') or 'unknown'
+        return 'unknown'
 
 
 # ─── state (file-backed; atomic writes) ───────────────────────────────────────
@@ -306,17 +330,36 @@ def _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry):
                               '(CHATWOOT_TOKEN / CHATWOOT_INBOX_ID missing).')
         if not phone:
             raise PollerError('No phone number found on this task.')
-        text = INVITE_TEXT.format(name=str(name).split(' ')[0], role=role, link=INVITE_LINK)
-        conv = cw.send_whatsapp(phone, str(name), text)
+        first = str(name).split(' ')[0]
+        # Template variables: single-line values only (WhatsApp strips newlines
+        # inside variables, so each instruction is its own parameter).
+        template_vars = {
+            '1': first,
+            '2': role,
+            '3': INVITE_LINK,
+            '4': 'Sign in and make your candidate profile, fill all the details.',
+            '5': f'Go to Explore Jobs, apply for {role}, and appear for the interview.',
+        }
+        text = INVITE_TEXT.format(name=first, role=role, link=INVITE_LINK)
+        conv, message_id = cw.send_whatsapp(phone, str(name), text, template_vars)
+        # Delivery verification: Chatwoot queues the message and reports the
+        # real WhatsApp delivery status asynchronously. 'sent' here means
+        # accepted so far; anything else is a definite failure.
+        time.sleep(3)
+        status = cw.message_status(conv, message_id)
+        if status == 'failed':
+            raise PollerError('Chatwoot reports the WhatsApp message FAILED to deliver '
+                              '(check template name/inbox in Chatwoot).')
         entry['status'] = 'sent'
         entry['sent_at'] = _now_ist()
         entry['phone'] = _mask(phone)
+        entry['chatwoot_status'] = status
         _comment(cu, tid,
                  f'Interview invite sent on WhatsApp to {entry["phone"]} at {entry["sent_at"]} '
-                 f'(Chatwoot conversation #{conv}). Set the Interview Invite field to No and back '
-                 f'to Yes to send again.')
-        actions.append(f'SENT invite to {label} via Chatwoot conversation #{conv}')
-        log(f'sent: {label}')
+                 f'(Chatwoot conversation #{conv}, delivery status: {status}). Set the Interview '
+                 f'Invite field to No and back to Yes to send again.')
+        actions.append(f'SENT invite to {label} via Chatwoot conversation #{conv} ({status})')
+        log(f'sent: {label} ({status})')
     except PollerError as exc:
         detail = str(exc)[:300]
         if entry.get('status') != 'failed: ' + detail:

@@ -100,19 +100,26 @@ class FakeCU:
 
 
 class FakeCW:
-    def __init__(self, fail=False):
+    def __init__(self, fail=False, deliver_status='sent'):
         self.token, self.inbox = 'tok', '19'
         self.sent = []
         self.fail = fail
+        self.deliver_status = deliver_status
+        self._counter = 100
 
     def configured(self):
         return True
 
-    def send_whatsapp(self, phone, name, text):
+    def send_whatsapp(self, phone, name, text, template_vars=None):
         if self.fail:
             raise ip.PollerError('Chatwoot 500 on POST conversations/1/messages')
-        self.sent.append((phone, name, text))
-        return 7
+        self._counter += 1
+        self.sent.append({'phone': phone, 'name': name, 'text': text,
+                          'template_vars': template_vars, 'message_id': self._counter})
+        return 7, self._counter
+
+    def message_status(self, conversation_id, message_id):
+        return self.deliver_status
 
 
 def make_lists(cu, phone='+919876543210'):
@@ -189,11 +196,15 @@ class FolderModeTests(unittest.TestCase):
         self.set_invite('i1', 'yes-id')
         actions = self.run_cycle()
         self.assertEqual(len(self.cw.sent), 1)
-        phone, name, text = self.cw.sent[0]
-        self.assertEqual(phone, '+919876543210')
-        self.assertEqual(name, 'Test Candidate')
-        self.assertIn('shortlisted for Sales', text)
-        self.assertIn('https://recrut.teamlens.co/', text)
+        s = self.cw.sent[0]
+        self.assertEqual(s['phone'], '+919876543210')
+        self.assertEqual(s['name'], 'Test Candidate')
+        self.assertIn('shortlisted for Sales', s['text'])
+        self.assertIn('https://recrut.teamlens.co/', s['text'])
+        # template mode: 5 single-line variables for the approved Meta template
+        self.assertEqual(s['template_vars']['1'], 'Test')
+        self.assertEqual(s['template_vars']['2'], 'Sales')
+        self.assertEqual(s['template_vars']['3'], 'https://recrut.teamlens.co/')
         self.assertTrue(actions and actions[0].startswith('SENT'))
         self.assertIn('Interview invite sent on WhatsApp', self.cu.comments['i1'][0])
 
@@ -201,9 +212,9 @@ class FolderModeTests(unittest.TestCase):
         self.set_invite('p1', 'yes-id')
         actions = self.run_cycle()
         self.assertEqual(len(self.cw.sent), 2)
-        roles = [t for _, _, t in self.cw.sent]
-        self.assertTrue(any('shortlisted for Sales' in t for t in roles))
-        self.assertTrue(any('shortlisted for Operations' in t for t in roles))
+        roles = [s['text'] for s in self.cw.sent]
+        self.assertTrue(any('shortlisted for Sales' in r for r in roles))
+        self.assertTrue(any('shortlisted for Operations' in r for r in roles))
 
     def test_second_cycle_does_not_resend(self):
         self.set_invite('i1', 'yes-id')
@@ -287,19 +298,20 @@ class ATSModeTests(unittest.TestCase):
         self.set_invite('a1', 'yes-id')
         actions = self.run_cycle()
         self.assertEqual(len(self.cw.sent), 1)
-        phone, name, text = self.cw.sent[0]
-        self.assertEqual(phone, '+919289444912')      # from Phone no. field
-        self.assertEqual(name, 'Shivam Dubey')        # task name
-        self.assertIn('shortlisted for Generalist', text)  # Role dropdown resolved
+        s = self.cw.sent[0]
+        self.assertEqual(s['phone'], '+919289444912')      # from Phone no. field
+        self.assertEqual(s['name'], 'Shivam Dubey')        # task name
+        self.assertIn('shortlisted for Generalist', s['text'])  # Role dropdown resolved
+        self.assertEqual(s['template_vars']['2'], 'Generalist')
         self.assertTrue(actions and actions[0].startswith('SENT'))
         self.assertIn('Interview invite sent on WhatsApp', self.cu.comments['a1'][0])
 
     def test_ats_leading_zero_phone_and_profile_role(self):
         self.set_invite('a2', 'yes-id')
         self.run_cycle()
-        phone, name, text = self.cw.sent[0]
-        self.assertEqual(phone, '+919908415266')       # 09908… normalized
-        self.assertIn('shortlisted for Sales', text)  # Interview Profile option, trailing space stripped
+        s = self.cw.sent[0]
+        self.assertEqual(s['phone'], '+919908415266')       # 09908… normalized
+        self.assertIn('shortlisted for Sales', s['text'])  # Interview Profile option, trailing space stripped
 
     def test_ats_missing_data_fails_gracefully(self):
         self.set_invite('a3', 'yes-id')
@@ -342,6 +354,21 @@ class ATSModeTests(unittest.TestCase):
         self.assertEqual(self.cu.values.get(('a1', fld['fid'])), 'no-id')
         # nothing was sent: value is No, not Yes
         self.assertEqual(self.cw.sent, [])
+
+    def test_delivery_failure_posts_no_success_comment(self):
+        # The bug found live: Chatwoot queues the message, then WhatsApp fails
+        # (invalid template). The poller must NOT post a success comment.
+        self.cw = FakeCW(deliver_status='failed')
+        self.set_invite('a1', 'yes-id')
+        actions = self.run_cycle()
+        self.assertEqual(self.cw.sent and self.cw.sent[0]['template_vars'] is not None, True)
+        self.assertTrue(any('FAILED' in a for a in actions))
+        comments = self.cu.comments.get('a1', [])
+        self.assertTrue(any('FAILED to deliver' in c for c in comments))
+        self.assertFalse(any('invite sent on WhatsApp' in c for c in comments))
+        # state must not latch 'sent' so the next cycle retries
+        state = ip.load_state(self.state_path)
+        self.assertNotEqual(state['tasks'].get('a1', {}).get('status'), 'sent')
 
     def test_unprofiled_tasks_stay_empty(self):
         # a3 has no role/profile/labels at all: field stays untouched.
