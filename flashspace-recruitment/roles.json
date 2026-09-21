@@ -34,5 +34,17 @@
     "details": "Take end-to-end ownership of the marketing vertical: plan priorities, execute campaigns and measure results across paid ads, organic reach, social media, content and related marketing channels. Use AI tools for research, content creation and campaign workflows while checking accuracy, brand consistency and output quality. Coordinate the content calendar and channel activity, run measurable experiments, track performance and use insights to improve reach, engagement and conversion. Bring a practical, hands-on approach to building and improving the overall marketing function.",
     "skills": ["AI marketing tools", "Paid ads", "Organic reach", "Social media", "Content strategy", "Campaign analytics"],
     "published": true
+  },
+  {
+    "id": "interior-designer",
+    "title": "Interior Designer",
+    "department": "Design",
+    "location": "On-site — Delhi",
+    "type": "Full-time",
+    "experience": "0-3 years experience",
+    "description": "Design functional, beautiful spaces end to end — from concept and layouts to materials, execution and final styling for live client projects.",
+    "details": "Work on live interior design projects from concept to execution. Develop design concepts, mood boards, layouts and 3D visualisations, and present them clearly to clients and the team. Select materials, finishes, furniture and fixtures within project budgets. Coordinate with vendors, contractors and site teams to keep execution true to the design. Visit sites, track progress and resolve on-ground issues during execution. Use design and drafting tools (SketchUp, AutoCAD, 3ds Max or similar) and AI tools to speed up concepts, renders and presentations.",
+    "skills": ["Interior design", "Space planning", "SketchUp", "AutoCAD", "3D visualisation", "Material selection", "Client presentation"],
+    "published": true
   }
 ]

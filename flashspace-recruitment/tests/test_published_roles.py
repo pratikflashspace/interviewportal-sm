@@ -14,6 +14,7 @@ EXPECTED = {
     'generalist-sales': 'Generalist (Sales)',
     'generalist-operations': 'Generalist (Operations)',
     'ai-marketing': 'AI Marketing',
+    'interior-designer': 'Interior Designer',
 }
 
 class PublishedRoleTests(unittest.TestCase):
@@ -21,14 +22,19 @@ class PublishedRoleTests(unittest.TestCase):
         self.roles = json.loads((ROOT / 'roles.json').read_text())
 
     def test_exact_confirmed_vacancies_and_terms(self):
-        self.assertEqual(len(self.roles), 3)
+        self.assertEqual(len(self.roles), len(EXPECTED))
         self.assertEqual({r['id']: r['title'] for r in self.roles}, EXPECTED)
         for role in self.roles:
             with self.subTest(role=role['id']):
                 self.assertIs(role['published'], True)
-                self.assertEqual(role['location'], 'Remote / On-site — both available')
+                if role['id'] == 'interior-designer':
+                    # On-site Delhi design role; terms confirmed 21 September 2026.
+                    self.assertEqual(role['location'], 'On-site — Delhi')
+                    self.assertEqual(role['experience'], '0-3 years experience')
+                else:
+                    self.assertEqual(role['location'], 'Remote / On-site — both available')
+                    self.assertEqual(role['experience'], '0-2 years experience')
                 self.assertEqual(role['type'], 'Full-time')
-                self.assertEqual(role['experience'], '0-2 years experience')
                 for field in ('department', 'description', 'details'):
                     self.assertTrue(role[field].strip())
                 self.assertTrue(role['skills'])
@@ -50,7 +56,7 @@ class PublishedRoleTests(unittest.TestCase):
         app.roles = copy.deepcopy(self.roles)
         app.roles[0]['published'] = False
         result, _ = app.route({'PATH_INFO': '/api/roles', 'REQUEST_METHOD': 'GET'}, {})
-        self.assertEqual(len(result), 2)
+        self.assertEqual(len(result), len(EXPECTED) - 1)
         self.assertNotIn('generalist-sales', {r['id'] for r in result})
 
     def test_configuration_passes_actual_startup_validation(self):
