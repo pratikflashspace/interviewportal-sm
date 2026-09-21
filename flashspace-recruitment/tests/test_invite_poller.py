@@ -59,6 +59,10 @@ class FakeCU:
             tid = path.split('/')[1]
             self.comments.setdefault(tid, []).append(data['comment_text'])
             return {'id': 1}
+        if method == 'POST' and path.startswith('task/') and '/field/' in path:
+            tid = path.split('/')[1]; fid = path.split('/')[3]
+            self.values[(tid, fid)] = (data or {}).get('value')
+            return {}
         raise AssertionError(f'unmapped call: {method} {path}')
 
     def set_field(self, tid, fid, value, lid='l1'):
@@ -297,6 +301,26 @@ class ATSModeTests(unittest.TestCase):
         ip.save_state(self.state_path, state)
         self.assertEqual(self.cw.sent, [])
         self.assertTrue(any('WOULD SEND' in a for a in actions))
+
+    def test_profiled_tasks_get_invite_defaulted_to_no(self):
+        # a1 has Role set (Generalist) but no Interview Invite value yet.
+        state = ip.load_state(self.state_path)
+        fld = ip.ensure_invite_field(self.cu, 'ats', state)
+        ip.save_state(self.state_path, state)
+        self.assertNotIn(('a1', fld['fid']), self.cu.values)  # empty right now
+        ip.run_once(self.cu, self.cw, state, ats_list='ats', dry=False)
+        # poller must have written the "No" option id onto a1
+        self.assertEqual(self.cu.values.get(('a1', fld['fid'])), 'no-id')
+        # nothing was sent: value is No, not Yes
+        self.assertEqual(self.cw.sent, [])
+
+    def test_unprofiled_tasks_stay_empty(self):
+        # a3 has no role/profile/labels at all: field stays untouched.
+        state = ip.load_state(self.state_path)
+        fld = ip.ensure_invite_field(self.cu, 'ats', state)
+        ip.save_state(self.state_path, state)
+        ip.run_once(self.cu, self.cw, state, ats_list='ats', dry=False)
+        self.assertNotIn(('a3', fld['fid']), self.cu.values)
 
 
 class SharedHelperTests(unittest.TestCase):

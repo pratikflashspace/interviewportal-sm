@@ -383,6 +383,39 @@ def _ats_role(task, ctx):
     return 'the role you applied for'
 
 
+def _ats_has_profile(task, ctx):
+    """True when the task's Interview Profile (or role fallbacks) is set."""
+    for f in task.get('custom_fields') or []:
+        name = f.get('name', '')
+        value = f.get('value')
+        if value is None or value == '':
+            continue
+        if name in (ATS_ROLE_FIELD, ATS_PROFILE_FIELD, ATS_LABELS_FIELD):
+            if isinstance(value, list) and not value:
+                continue
+            return True
+    return False
+
+
+def _default_invite_for_profiled(cu, cw, state, task, field, ctx, dry):
+    """Once Interview Profile is selected, Interview Invite never stays empty:
+    default it to No via the API (ClickUp has no conditional visibility and
+    the default cannot be set on an existing field)."""
+    if not field.get('no'):
+        return
+    current = _invite_field(task, field['fid'])
+    if current is not None and current.get('value') is not None:
+        return  # already carries a value
+    if not _ats_has_profile(task, ctx):
+        return  # not yet profiled: leave unset until a profile is chosen
+    if dry:
+        return
+    try:
+        cu.call('POST', f"task/{task['id']}/field/{field['fid']}", {'value': field['no']})
+    except PollerError:
+        pass  # best-effort housekeeping; the invite flow itself is unaffected
+
+
 def _poll_ats_list(cu, cw, state, lid, actions, log, dry):
     field = ensure_invite_field(cu, lid, state)
     ctx = _ats_context(cu, lid)
@@ -390,6 +423,10 @@ def _poll_ats_list(cu, cw, state, lid, actions, log, dry):
         tid = task['id']
         name = (task.get('name') or 'Candidate').strip()
         selected = _invite_selected(task, field)
+        # ATS housekeeping (approved 21 September 2026): once a task has an
+        # interview profile, Interview Invite must never sit empty — the
+        # poller defaults it to No so the field always shows a value.
+        _default_invite_for_profiled(cu, cw, state, task, field, ctx, dry)
         _reset_if_deselected(state, tid, selected)
         if not selected or _already_sent(state, tid):
             continue
