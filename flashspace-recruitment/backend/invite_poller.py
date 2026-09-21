@@ -43,7 +43,7 @@ INVITE_LINK = 'https://recrut.teamlens.co/'
 # Approved Meta WhatsApp template (created 21 September 2026 by Pratik).
 WHATSAPP_TEMPLATE_NAME = 'teamrecrut_invite'
 WHATSAPP_TEMPLATE_CATEGORY = 'UTILITY'
-WHATSAPP_TEMPLATE_LANG = 'en'
+WHATSAPP_TEMPLATE_LANG = 'en_US'
 ATS_LIST_ENV = 'ATS_LIST_ID'
 FOLDER_ENV = 'CLICKUP_CANDIDATE_FOLDER_ID'
 FIELD_NAME = 'Interview Invite'
@@ -354,6 +354,7 @@ def _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry):
         entry['sent_at'] = _now_ist()
         entry['phone'] = _mask(phone)
         entry['chatwoot_status'] = status
+        entry['retries'] = 0  # fresh budget for any future re-send
         _comment(cu, tid,
                  f'Interview invite sent on WhatsApp to {entry["phone"]} at {entry["sent_at"]} '
                  f'(Chatwoot conversation #{conv}, delivery status: {status}). Set the Interview '
@@ -362,11 +363,21 @@ def _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry):
         log(f'sent: {label} ({status})')
     except PollerError as exc:
         detail = str(exc)[:300]
+        entry['retries'] = entry.get('retries', 0) + 1
+        # Cap automatic retries at 3: a persistent failure (bad template,
+        # invalid number) must not create a new Chatwoot conversation every
+        # 2-minute cycle. The recruiter flips No->Yes to try again manually.
+        if entry['retries'] > 3:
+            entry['saw_yes'] = True  # stop retrying; manual re-select to retry
+            entry['status'] = 'failed (gave up after 3 retries): ' + detail
+            actions.append(f'GAVE UP on {label} after 3 retries: {detail[:120]}')
+            log(f'gave up on {tid}: {detail[:120]}')
+            return
         if entry.get('status') != 'failed: ' + detail:
             try:
                 _comment(cu, tid,
                          f'Interview invite NOT sent: {detail} The automation retries while this '
-                         f'field stays Yes.')
+                         f'field stays Yes (max 3 attempts).')
                 entry['status'] = 'failed: ' + detail
                 actions.append(f'FAILED invite to {label}: {detail[:120]}')
                 log(f'failed: {label}: {detail[:120]}')
