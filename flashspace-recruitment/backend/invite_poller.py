@@ -54,6 +54,7 @@ INVITE_TEXT = (
     'Instructions:\n'
     '1. Sign in and make your candidate profile, fill all the details\n'
     '2. Go to Explore Jobs, apply for {role}, and appear for the interview\n\n'
+    'Please complete the assessment within 24 hours of receiving this message.\n\n'
     '— Team Stirring Minds'
 )
 
