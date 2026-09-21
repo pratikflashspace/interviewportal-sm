@@ -265,16 +265,24 @@ def ensure_invite_field(cu, lid, state):
     return cached
 
 
-def _list_tasks(cu, lid):
+def _list_tasks(cu, lid, extra='', max_pages=50):
     tasks, page = [], 0
-    while page < 50:
-        res = cu.call('GET', f'list/{lid}/task?include_closed=true&page={page}&subtasks=false')
+    while page < max_pages:
+        res = cu.call('GET', f'list/{lid}/task?include_closed=true&page={page}&subtasks=false{extra}')
         batch = res.get('tasks') or []
         tasks.extend(batch)
         if len(batch) < 100 or res.get('last_page') is True:
             break
         page += 1
     return tasks
+
+
+def _list_tasks_filtered(cu, lid, field_id, value):
+    """Server-side filtered task query: only tasks whose custom field equals
+    value. Keeps the poll cycle tiny on 1000+-task lists."""
+    import urllib.parse
+    q = urllib.parse.quote(json.dumps([{'field_id': field_id, 'operator': '=', 'value': value}]))
+    return _list_tasks(cu, lid, f'&custom_fields={q}')
 
 
 def _comment(cu, task_id, text):
@@ -419,20 +427,38 @@ def _default_invite_for_profiled(cu, cw, state, task, field, ctx, dry):
 def _poll_ats_list(cu, cw, state, lid, actions, log, dry):
     field = ensure_invite_field(cu, lid, state)
     ctx = _ats_context(cu, lid)
-    for task in _list_tasks(cu, lid):
+    # Server-side filter keeps cycles tiny on 1000+-task lists (free-tier
+    # rate limits made full scans time out a 2-minute cron window).
+    yes_tasks = _list_tasks_filtered(cu, lid, field['fid'], field['yes'])
+    for task in yes_tasks:
         tid = task['id']
         name = (task.get('name') or 'Candidate').strip()
         selected = _invite_selected(task, field)
-        # ATS housekeeping (approved 21 September 2026): once a task has an
-        # interview profile, Interview Invite must never sit empty — the
-        # poller defaults it to No so the field always shows a value.
-        _default_invite_for_profiled(cu, cw, state, task, field, ctx, dry)
         _reset_if_deselected(state, tid, selected)
         if not selected or _already_sent(state, tid):
             continue
         phone = _ats_phone(task, ctx)
         role = _ats_role(task, ctx)
         _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry)
+    # Send loop above only sees Yes tasks; a No→Yes re-send needs to observe
+    # the No in between. State-tracked tasks (previously sent) are few, so
+    # probe them individually instead of scanning the whole list.
+    current_yes = {t['id'] for t in yes_tasks}
+    for tid, entry in list(state['tasks'].items()):
+        if not entry.get('saw_yes') or tid in current_yes:
+            continue
+        try:
+            task = cu.call('GET', f'task/{tid}')
+        except PollerError:
+            continue
+        if not _invite_selected(task, field):
+            entry['saw_yes'] = False  # observed No/unset: a later Yes re-sends
+    # Housekeeping: default empty Interview Invite to No, but only on the
+    # newest tasks (order_by=created desc, 2 pages max). New applicants land
+    # here; the 1500-task historical backfill is already done.
+    recent = _list_tasks(cu, lid, '&order_by=created&reverse=true', max_pages=2)
+    for task in recent[:200]:
+        _default_invite_for_profiled(cu, cw, state, task, field, ctx, dry)
 
 
 # ─── folder mode (legacy Teamrecrut — Candidate): one List per candidate ─────

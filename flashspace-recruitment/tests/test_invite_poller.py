@@ -41,8 +41,21 @@ class FakeCU:
             return {'field': field}
         if method == 'GET' and '/task?' in path:
             lid = path.split('/')[1]
+            query = path.split('?', 1)[1]
             out = []
-            for tid, t in self.lists[lid]['tasks'].items():
+            all_tasks = list(self.lists[lid]['tasks'].items())
+            # server-side custom_fields filter: [{field_id, operator: =, value}]
+            import urllib.parse as up
+            params = dict(p.split('=', 1) for p in query.split('&') if '=' in p)
+            if 'custom_fields' in params:
+                flt = json.loads(up.unquote(params['custom_fields']))
+                want_fid, want_val = flt[0]['field_id'], flt[0]['value']
+                matched = {tid for (tid, fid), v in self.values.items()
+                           if fid == want_fid and v == want_val}
+                all_tasks = [(tid, t) for tid, t in all_tasks if tid in matched]
+            if params.get('order_by') == 'created' and params.get('reverse') == 'true':
+                all_tasks = list(reversed(all_tasks))
+            for tid, t in all_tasks:
                 cf = []
                 for (ttid, fid), opt in self.values.items():
                     if ttid == tid and fid in self.fields.get(lid, {}):
@@ -59,6 +72,22 @@ class FakeCU:
             tid = path.split('/')[1]
             self.comments.setdefault(tid, []).append(data['comment_text'])
             return {'id': 1}
+        if method == 'GET' and path.startswith('task/') and '/comment' not in path and '?' not in path:
+            tid = path.split('/')[1]
+            for lid, l in self.lists.items():
+                if tid in l['tasks']:
+                    cf = []
+                    for (ttid, fid), opt in self.values.items():
+                        if ttid == tid and fid in self.fields.get(lid, {}):
+                            cf.append({'id': fid, 'name': self.fields[lid][fid]['name'],
+                                       'type_config': self.fields[lid][fid]['type_config'], 'value': opt})
+                    for extra in l['tasks'][tid].get('custom_fields', []):
+                        if not any(c['id'] == extra['id'] for c in cf):
+                            cf.append(extra)
+                    return {'id': tid, 'name': l['tasks'][tid]['name'],
+                            'text_content': l['tasks'][tid].get('text_content', ''),
+                            'custom_fields': cf}
+            raise AssertionError(f'unknown task: {tid}')
         if method == 'POST' and path.startswith('task/') and '/field/' in path:
             tid = path.split('/')[1]; fid = path.split('/')[3]
             self.values[(tid, fid)] = (data or {}).get('value')
