@@ -76,6 +76,13 @@ ATS_ROLE_FIELD = 'Role'
 ATS_PROFILE_FIELD = 'Interview Profile'
 ATS_LABELS_FIELD = 'Which Profile are you applying for?'
 
+# WhatsApp Delivery status field (recruiter-facing, auto-updated by this poller).
+DELIVERY_FIELD_NAME = 'WhatsApp Delivery'
+# ClickUp dropdown -> Chatwoot message status mapping. Terminal states stop
+# the per-cycle re-check; non-terminal keep being polled until they settle.
+DELIVERY_OPTIONS = ('Pending', 'Sent', 'Delivered', 'Read', 'Failed')
+DELIVERY_TERMINAL = ('delivered', 'read', 'failed')
+
 
 class PollerError(Exception):
     pass
@@ -306,6 +313,54 @@ def ensure_invite_field(cu, lid, state):
     return cached
 
 
+def ensure_delivery_field(cu, lid, state):
+    """Find-or-create the WhatsApp Delivery dropdown, cached per list.
+
+    Options are fixed at creation; if the field exists but lacks one of the
+    required options (e.g. created manually with different labels), the
+    mismatch is raised loudly instead of silently writing wrong values.
+    """
+    key = 'delivery:' + str(lid)
+    cached = state['fields'].get(key)
+    if cached and cached.get('fid') and cached.get('ids'):
+        return cached
+    found = None
+    for f in cu.call('GET', f'list/{lid}/field').get('fields') or []:
+        if f.get('name') == DELIVERY_FIELD_NAME:
+            found = f
+            break
+    if not found:
+        created = cu.call('POST', f'list/{lid}/field', {
+            'name': DELIVERY_FIELD_NAME, 'type': 'drop_down',
+            'type_config': {'placeholder': 'Auto-updated by the invite automation.',
+                            'options': [{'name': n, 'order': i}
+                                        for i, n in enumerate(DELIVERY_OPTIONS)]}})
+        found = created.get('field') or created
+    options = found.get('type_config', {}).get('options') or []
+    ids = {str(o.get('name', '')).strip(): o.get('id') for o in options}
+    missing = [n for n in DELIVERY_OPTIONS if not ids.get(n)]
+    if missing:
+        raise PollerError(f'{DELIVERY_FIELD_NAME} on list {lid} is missing options: '
+                          f'{", ".join(missing)}. Fix the field in ClickUp.')
+    cached = {'fid': found['id'], 'ids': ids}
+    state['fields'][key] = cached
+    return cached
+
+
+def set_delivery_status(cu, tid, delivery, status):
+    """Write the WhatsApp Delivery field on a task (best-effort, deduped)."""
+    if not delivery or not status:
+        return
+    opt = delivery['ids'].get(status)
+    if not opt:
+        return
+    try:
+        cu.call('POST', f'task/{tid}/field/{delivery["fid"]}', {'value': opt})
+    except PollerError as exc:
+        # Never let a status-field write break the invite flow itself.
+        print(f'delivery-field write failed on {tid}: {exc}', file=sys.stderr)
+
+
 def _list_tasks(cu, lid, extra='', max_pages=50):
     tasks, page = [], 0
     while page < max_pages:
@@ -331,7 +386,7 @@ def _comment(cu, task_id, text):
 
 
 # ─── shared per-task delivery ─────────────────────────────────────────────────
-def _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry):
+def _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry, delivery=None):
     """Send one invite (or simulate). Caller has already verified the trigger
     and that this task was not already sent for this Yes."""
     entry = state['tasks'].setdefault(tid, {})
@@ -359,12 +414,18 @@ def _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry):
         }
         text = INVITE_TEXT.format(name=first, role=role, link=INVITE_LINK)
         conv, message_id = cw.send_whatsapp(phone, str(name), text, template_vars)
+        # Persist the conversation/message so later cycles can re-check status
+        # even after a restart; the delivery field tracks it in ClickUp.
+        entry['conv'] = conv
+        entry['message_id'] = message_id
+        set_delivery_status(cu, tid, delivery, 'Pending')
         # Delivery verification: Chatwoot queues the message and reports the
         # real WhatsApp delivery status asynchronously. 'sent' here means
         # accepted so far; anything else is a definite failure.
         time.sleep(3)
         status = cw.message_status(conv, message_id)
         if status == 'failed':
+            set_delivery_status(cu, tid, delivery, 'Failed')
             raise PollerError('Chatwoot reports the WhatsApp message FAILED to deliver '
                               '(check template name/inbox in Chatwoot).')
         entry['status'] = 'sent'
@@ -372,6 +433,8 @@ def _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry):
         entry['phone'] = _mask(phone)
         entry['chatwoot_status'] = status
         entry['retries'] = 0  # fresh budget for any future re-send
+        set_delivery_status(cu, tid, delivery, 'Delivered' if status == 'delivered'
+                            else 'Sent' if status == 'sent' else 'Read' if status == 'read' else 'Sent')
         _comment(cu, tid,
                  f'Interview invite sent on WhatsApp to {entry["phone"]} at {entry["sent_at"]} '
                  f'(Chatwoot conversation #{conv}, delivery status: {status}). Set the Interview '
@@ -387,6 +450,7 @@ def _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry):
         if entry['retries'] > 3:
             entry['saw_yes'] = True  # stop retrying; manual re-select to retry
             entry['status'] = 'failed (gave up after 3 retries): ' + detail
+            set_delivery_status(cu, tid, delivery, 'Failed')
             actions.append(f'GAVE UP on {label} after 3 retries: {detail[:120]}')
             log(f'gave up on {tid}: {detail[:120]}')
             return
@@ -396,6 +460,7 @@ def _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry):
                          f'Interview invite NOT sent: {detail} The automation retries while this '
                          f'field stays Yes (max 3 attempts).')
                 entry['status'] = 'failed: ' + detail
+                set_delivery_status(cu, tid, delivery, 'Failed')
                 actions.append(f'FAILED invite to {label}: {detail[:120]}')
                 log(f'failed: {label}: {detail[:120]}')
             except PollerError as cexc:
@@ -416,6 +481,45 @@ def _reset_if_deselected(state, tid, selected):
 
 
 # ─── ATS mode: one task per applicant, structured fields ──────────────────────
+def _refresh_delivery_statuses(cu, cw, state, lid, delivery, actions, log):
+    """Re-check Chatwoot for every tracked invite still in a non-terminal
+    delivery state and update the WhatsApp Delivery field when it moves.
+
+    'sent' means Meta accepted it but the phone has not confirmed yet — the
+    exact gap that hid the earlier mass failures. Runs each cycle until the
+    message reaches delivered/read/failed."""
+    if not delivery or not cw.configured():
+        return
+    for tid, entry in list(state['tasks'].items()):
+        if not entry.get('conv') or not entry.get('message_id'):
+            continue
+        if entry.get('delivery_done'):
+            continue
+        try:
+            status = cw.message_status(entry['conv'], entry['message_id'])
+        except PollerError as exc:
+            log(f'status re-check skipped on {tid}: {exc}')
+            continue
+        if status == 'failed':
+            entry['delivery_done'] = True
+            entry['chatwoot_status'] = 'failed'
+            set_delivery_status(cu, tid, delivery, 'Failed')
+            _comment(cu, tid, 'WhatsApp delivery update: FAILED. The invite did not reach '
+                     'this number. Flip Interview Invite No→Yes to retry, or contact the '
+                     'candidate another way.')
+            actions.append(f'DELIVERY FAILED for {tid} (Chatwoot #{entry["conv"]})')
+            log(f'delivery failed: {tid}')
+        elif status in ('delivered', 'read'):
+            entry['delivery_done'] = True
+            entry['chatwoot_status'] = status
+            set_delivery_status(cu, tid, delivery, 'Read' if status == 'read' else 'Delivered')
+            actions.append(f'DELIVERY {status.upper()} for {tid} (Chatwoot #{entry["conv"]})')
+            log(f'delivery {status}: {tid}')
+        elif status != entry.get('chatwoot_status'):
+            entry['chatwoot_status'] = status
+            set_delivery_status(cu, tid, delivery, 'Sent')
+
+
 def _ats_context(cu, lid):
     """Field definitions of the ATS list needed to read phone and role."""
     ctx = {'phone_fids': [], 'role': {}, 'profile': {}, 'labels': {}}
@@ -498,6 +602,13 @@ def _default_invite_for_profiled(cu, cw, state, task, field, ctx, dry):
 
 def _poll_ats_list(cu, cw, state, lid, actions, log, dry):
     field = ensure_invite_field(cu, lid, state)
+    try:
+        delivery = ensure_delivery_field(cu, lid, state)
+    except PollerError as exc:
+        # The invite flow must not die because a status field is broken; the
+        # sends continue and delivery simply stops being tracked in ClickUp.
+        delivery = None
+        log(f'delivery field unavailable on list {lid}: {exc}')
     ctx = _ats_context(cu, lid)
     # Server-side filter keeps cycles tiny on 1000+-task lists (free-tier
     # rate limits made full scans time out a 2-minute cron window).
@@ -511,7 +622,7 @@ def _poll_ats_list(cu, cw, state, lid, actions, log, dry):
             continue
         phone = _ats_phone(task, ctx)
         role = _ats_role(task, ctx)
-        _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry)
+        _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry, delivery)
     # Send loop above only sees Yes tasks; a No→Yes re-send needs to observe
     # the No in between. State-tracked tasks (previously sent) are few, so
     # probe them individually instead of scanning the whole list.
@@ -531,6 +642,8 @@ def _poll_ats_list(cu, cw, state, lid, actions, log, dry):
     recent = _list_tasks(cu, lid, '&order_by=created&reverse=true', max_pages=2)
     for task in recent[:200]:
         _default_invite_for_profiled(cu, cw, state, task, field, ctx, dry)
+    # Track pending deliveries in ClickUp until they settle.
+    _refresh_delivery_statuses(cu, cw, state, lid, delivery, actions, log)
 
 
 # ─── folder mode (legacy Teamrecrut — Candidate): one List per candidate ─────

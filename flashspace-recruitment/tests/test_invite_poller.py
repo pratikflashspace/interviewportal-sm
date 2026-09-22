@@ -34,9 +34,17 @@ class FakeCU:
         if method == 'POST' and path.endswith('/field'):
             lid = path.split('/')[1]
             fid = f'fld-{lid}-{len(self.fields.get(lid, {}))}'
+            opts = [{'id': f'opt-{i}', 'name': o['name'], 'orderindex': i}
+                    for i, o in enumerate((data.get('type_config') or {}).get('options') or [])]
+            if not opts:
+                opts = [{'id': 'yes-id', 'name': 'Yes', 'orderindex': 0},
+                        {'id': 'no-id', 'name': 'No', 'orderindex': 1}]
+            elif [o['name'] for o in opts] == ['Yes', 'No']:
+                # keep the classic ids tests rely on
+                opts = [{'id': 'yes-id', 'name': 'Yes', 'orderindex': 0},
+                        {'id': 'no-id', 'name': 'No', 'orderindex': 1}]
             field = {'id': fid, 'name': data['name'], 'type': data['type'],
-                     'type_config': {'options': [{'id': 'yes-id', 'name': 'Yes', 'orderindex': 0},
-                                                 {'id': 'no-id', 'name': 'No', 'orderindex': 1}]}}
+                     'type_config': {'options': opts}}
             self.fields.setdefault(lid, {})[fid] = field
             return {'field': field}
         if method == 'GET' and '/task?' in path:
@@ -381,6 +389,67 @@ class ATSModeTests(unittest.TestCase):
         ip.save_state(self.state_path, state)
         ip.run_once(self.cu, self.cw, state, ats_list='ats', dry=False)
         self.assertNotIn(('a3', fld['fid']), self.cu.values)
+
+    def _delivery_field_value(self, tid):
+        state = ip.load_state(self.state_path)
+        delivery = ip.ensure_delivery_field(self.cu, 'ats', state)
+        return self.cu.values.get((tid, delivery['fid']))
+
+    def test_send_sets_delivery_field_and_refresh_upgrades_it(self):
+        # Fresh send: field goes Pending then Sent; later cycles upgrade the
+        # status in ClickUp as Chatwoot reports the real delivery state.
+        self.cw = FakeCW(deliver_status='sent')
+        self.set_invite('a1', 'yes-id')
+        self.run_cycle()
+        state = ip.load_state(self.state_path)
+        delivery = ip.ensure_delivery_field(self.cu, 'ats', state)
+        sent_opt = delivery['ids']['Sent']
+        self.assertEqual(self.cu.values.get(('a1', delivery['fid'])), sent_opt)
+        # message tracked for re-checks
+        entry = state['tasks']['a1']
+        self.assertEqual(entry.get('conv'), 7)
+        self.assertTrue(entry.get('message_id'))
+        self.assertFalse(entry.get('delivery_done'))
+        # phone confirms delivery on a later cycle
+        self.cw.deliver_status = 'delivered'
+        self.run_cycle()
+        self.assertEqual(self._delivery_field_value('a1'), delivery['ids']['Delivered'])
+        # terminal: no further re-checks
+        state = ip.load_state(self.state_path)
+        self.assertTrue(state['tasks']['a1'].get('delivery_done'))
+
+    def test_late_failure_flips_field_to_failed_and_comments(self):
+        self.cw = FakeCW(deliver_status='sent')
+        self.set_invite('a1', 'yes-id')
+        self.run_cycle()
+        # Meta rejects it after acceptance (the 131049 quality-filter case)
+        self.cw.deliver_status = 'failed'
+        actions = self.run_cycle()
+        self.assertTrue(any('DELIVERY FAILED' in a for a in actions))
+        self.assertEqual(self._delivery_field_value('a1'),
+                         ip.ensure_delivery_field(self.cu, 'ats', ip.load_state(self.state_path))['ids']['Failed'])
+        self.assertTrue(any('FAILED' in c for c in self.cu.comments.get('a1', [])))
+
+    def test_read_is_terminal_and_tracked(self):
+        self.cw = FakeCW(deliver_status='read')
+        self.set_invite('a1', 'yes-id')
+        self.run_cycle()
+        state = ip.load_state(self.state_path)
+        delivery = ip.ensure_delivery_field(self.cu, 'ats', state)
+        self.assertEqual(self.cu.values.get(('a1', delivery['fid'])), delivery['ids']['Read'])
+        self.assertTrue(state['tasks']['a1'].get('delivery_done'))
+
+    def test_delivery_field_broken_does_not_stop_sends(self):
+        # A malformed WhatsApp Delivery field (missing options) must never
+        # block the invite sends themselves.
+        cu = self.cu
+        cu.fields['ats']['bad-delivery'] = {
+            'id': 'bad-delivery', 'name': 'WhatsApp Delivery', 'type': 'drop_down',
+            'type_config': {'options': [{'id': 'only', 'name': 'Bogus', 'orderindex': 0}]}}
+        self.set_invite('a1', 'yes-id')
+        actions = self.run_cycle()
+        self.assertTrue(any('SENT' in a for a in actions))
+        self.assertEqual(len(self.cw.sent), 1)
 
 
 class SharedHelperTests(unittest.TestCase):
