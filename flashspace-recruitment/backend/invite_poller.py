@@ -40,10 +40,14 @@ import time
 import urllib.request
 
 INVITE_LINK = 'https://recrut.teamlens.co/'
-# Approved Meta WhatsApp template (created 21 September 2026 by Pratik).
-WHATSAPP_TEMPLATE_NAME = 'teamrecrut_invite'
-WHATSAPP_TEMPLATE_CATEGORY = 'UTILITY'
-WHATSAPP_TEMPLATE_LANG = 'en_US'
+# Approved Meta WhatsApp template (created 22 September 2026 by Pratik).
+# Name/language/category verified live: sends fail with Meta #132001 until
+# these match Meta exactly; Chatwoot also caches Meta's template list — the
+# poller calls sync_templates each cycle so newly approved templates work
+# without manual intervention.
+WHATSAPP_TEMPLATE_NAME = 'recrut_invite'
+WHATSAPP_TEMPLATE_CATEGORY = 'MARKETING'
+WHATSAPP_TEMPLATE_LANG = 'en'
 ATS_LIST_ENV = 'ATS_LIST_ID'
 FOLDER_ENV = 'CLICKUP_CANDIDATE_FOLDER_ID'
 FIELD_NAME = 'Interview Invite'
@@ -153,6 +157,8 @@ class ChatwootClient:
 
         Template mode (template_vars given) uses the approved Meta template via
         template_params; plain text mode is kept for the 24-hour reply window.
+        Template variables are NAMED ({{candidate_name}} etc.) — verified live:
+        processed_params must carry the variable names as keys directly.
         Returns (conversation_id, message_id)."""
         contact_id = self.find_or_create_contact(phone, name)
         conversation_id = self.create_conversation(contact_id)
@@ -162,11 +168,21 @@ class ChatwootClient:
                 'name': WHATSAPP_TEMPLATE_NAME,
                 'category': WHATSAPP_TEMPLATE_CATEGORY,
                 'language': WHATSAPP_TEMPLATE_LANG,
-                'processed_params': {'body': template_vars},
+                'processed_params': template_vars,
             }
         _, created = self.call('POST', f'conversations/{conversation_id}/messages', payload)
         message_id = created.get('id')
         return conversation_id, message_id
+
+    def sync_templates(self):
+        """Ask Chatwoot to refresh its cached Meta template list. Chatwoot
+        caches templates at channel creation; a newly approved template is
+        invisible (and sends zero params → Meta #132000) until synced."""
+        try:
+            self.call('POST', f'inboxes/{int(self.inbox)}/sync_templates')
+            return True
+        except PollerError:
+            return False
 
     def message_status(self, conversation_id, message_id):
         """Read back the stored message; return its delivery status string."""
@@ -331,14 +347,15 @@ def _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry):
         if not phone:
             raise PollerError('No phone number found on this task.')
         first = str(name).split(' ')[0]
-        # Template variables: single-line values only (WhatsApp strips newlines
-        # inside variables, so each instruction is its own parameter).
+        # Template variables are NAMED in the approved template body
+        # ({{candidate_name}}, {{role}}, {{site_link}}, {{ins_one}}, {{ins_two}}).
+        # Values must be single-line (WhatsApp strips newlines inside vars).
         template_vars = {
-            '1': first,
-            '2': role,
-            '3': INVITE_LINK,
-            '4': 'Sign in and make your candidate profile, fill all the details.',
-            '5': f'Go to Explore Jobs, apply for {role}, and appear for the interview.',
+            'candidate_name': first,
+            'role': role,
+            'site_link': INVITE_LINK,
+            'ins_one': 'Sign in and make your candidate profile, fill all the details.',
+            'ins_two': f'Go to Explore Jobs, apply for {role}, and appear for the interview.',
         }
         text = INVITE_TEXT.format(name=first, role=role, link=INVITE_LINK)
         conv, message_id = cw.send_whatsapp(phone, str(name), text, template_vars)
@@ -568,6 +585,10 @@ def run_once(cu, cw, state, folder=None, ats_list=None, dry=False, log=None):
     actions = []
     if not cu.configured():
         raise PollerError('ClickUp is not configured; set CLICKUP_API_TOKEN.')
+    if cw.configured():
+        # Refresh Chatwoot's cached Meta template list once per cycle so newly
+        # approved templates are usable without manual intervention.
+        cw.sync_templates()
     if ats_list:
         _poll_ats_list(cu, cw, state, ats_list, actions, log, dry)
     if folder:

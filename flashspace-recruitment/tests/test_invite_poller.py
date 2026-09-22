@@ -121,6 +121,9 @@ class FakeCW:
     def message_status(self, conversation_id, message_id):
         return self.deliver_status
 
+    def sync_templates(self):
+        self.synced = True
+
 
 def make_lists(cu, phone='+919876543210'):
     cu.lists['l1'] = {'name': 'Test Candidate · FS-00000001', 'tasks': {
@@ -202,9 +205,10 @@ class FolderModeTests(unittest.TestCase):
         self.assertIn('shortlisted for Sales', s['text'])
         self.assertIn('https://recrut.teamlens.co/', s['text'])
         # template mode: 5 single-line variables for the approved Meta template
-        self.assertEqual(s['template_vars']['1'], 'Test')
-        self.assertEqual(s['template_vars']['2'], 'Sales')
-        self.assertEqual(s['template_vars']['3'], 'https://recrut.teamlens.co/')
+        self.assertEqual(s['template_vars']['candidate_name'], 'Test')
+        self.assertEqual(s['template_vars']['role'], 'Sales')
+        self.assertEqual(s['template_vars']['site_link'], 'https://recrut.teamlens.co/')
+        self.assertTrue(getattr(self.cw, 'synced', False), 'sync_templates must run per cycle')
         self.assertTrue(actions and actions[0].startswith('SENT'))
         self.assertIn('Interview invite sent on WhatsApp', self.cu.comments['i1'][0])
 
@@ -302,7 +306,7 @@ class ATSModeTests(unittest.TestCase):
         self.assertEqual(s['phone'], '+919289444912')      # from Phone no. field
         self.assertEqual(s['name'], 'Shivam Dubey')        # task name
         self.assertIn('shortlisted for Generalist', s['text'])  # Role dropdown resolved
-        self.assertEqual(s['template_vars']['2'], 'Generalist')
+        self.assertEqual(s['template_vars']['role'], 'Generalist')
         self.assertTrue(actions and actions[0].startswith('SENT'))
         self.assertIn('Interview invite sent on WhatsApp', self.cu.comments['a1'][0])
 
