@@ -55,6 +55,18 @@ MARKETING = rows('marketing-f', 'domain', 'fundamental', [
  ('You need to produce a month’s worth of marketing content with a small team. How would you use AI tools to make the process faster while maintaining accuracy, quality, and brand consistency?', ['Which parts would you keep under human review?', 'How would you check AI-generated information?']),
  ('You are given complete responsibility for Flashspace’s marketing for the next 30 days, but nobody gives you a detailed plan. What would you do?', ['What would you do during your first week?', 'What would you present to management at the end of 30 days?']),
 ])
-BANKS = {'sales': SALES, 'operations': OPERATIONS, 'marketing': MARKETING}
+DESIGN = rows('design-f', 'domain', 'fundamental', [
+ ('What does space planning mean in interior design, and why is it the starting point of a project?', ['What factors do you consider when planning how a space will be used?', 'How do you balance how a space looks with how well it works?']),
+ ('Walk me through how you would take a client brief and turn it into a design concept and mood board.', ['What questions would you ask a client before starting to design?', 'How do you decide on a style or theme when the client is unsure?']),
+ ('What are 3D visualisations and renders used for in interior design, and which tools have you used to create them?', ['Walk me through a render or visualisation you created and how you used it with a client or team.', 'How would you present a design to someone who cannot read technical drawings?']),
+]) + rows('design-c', 'domain', 'scenario', [
+ ('A client brief says “make it beautiful” but gives you no budget, style or timeline. How would you move the project forward in the first week?', ['What specific questions would you ask to turn this into a real brief?', 'How would you present initial directions so the client can react?']),
+ ('During a site visit you discover the site dimensions are different from the drawings you designed with. The furniture you ordered may not fit. What do you do?', ['Who would you inform first, and how would you communicate it to the client?', 'How would you prevent this from happening on the next project?']),
+ ('You are designing within a tight budget, but the client keeps adding rooms and features to the scope. How would you handle it?', ['How would you help the client understand the trade-offs?', 'When would you say no, and how?']),
+ ('Your design concept is finalised, but the vendor quotes for materials and furniture come in 30% over budget. How would you proceed?', ['What would you cut first, and why?', 'How would you find alternatives that keep the design intent?']),
+ ('On-site execution reveals a wall that needs to be moved, delaying the project. The client is upset and wants answers. How do you handle the situation and the client?', ['What options would you present to the client?', 'How would you keep the rest of the project on track?']),
+])
+BANKS = {'sales': SALES, 'operations': OPERATIONS, 'marketing': MARKETING, 'design': DESIGN}
 # Explicit identity mappings, not title inference. Recruiters must map new roles.
-DEFAULT_MAPPINGS = {'generalist-sales': 'sales', 'generalist-operations': 'operations', 'ai-marketing': 'marketing'}
+DEFAULT_MAPPINGS = {'generalist-sales': 'sales', 'generalist-operations': 'operations',
+                    'ai-marketing': 'marketing', 'interior-designer': 'design'}
