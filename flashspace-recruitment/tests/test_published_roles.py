@@ -16,16 +16,24 @@ EXPECTED = {
     'ai-marketing': 'AI Marketing',
     'interior-designer': 'Interior Designer',
 }
+# Roles removed from the public site via the code path: seeds marked
+# published:false force-close the live DB row on every startup.
+TAKEDOWN = {'role-4ddb6f2e207a4e9487d3ca86e3ab01e1': 'AI Engineer'}
 
 class PublishedRoleTests(unittest.TestCase):
     def setUp(self):
         self.roles = json.loads((ROOT / 'roles.json').read_text())
 
     def test_exact_confirmed_vacancies_and_terms(self):
-        self.assertEqual(len(self.roles), len(EXPECTED))
-        self.assertEqual({r['id']: r['title'] for r in self.roles}, EXPECTED)
+        published = {r['id']: r['title'] for r in self.roles if r['published']}
+        unpublished = {r['id']: r['title'] for r in self.roles if not r['published']}
+        self.assertEqual(published, EXPECTED)
+        self.assertEqual(unpublished, TAKEDOWN)
         for role in self.roles:
             with self.subTest(role=role['id']):
+                if role['id'] in TAKEDOWN:
+                    self.assertIs(role['published'], False)
+                    continue
                 self.assertIs(role['published'], True)
                 if role['id'] == 'interior-designer':
                     # On-site Delhi design role; terms confirmed 21 September 2026.
