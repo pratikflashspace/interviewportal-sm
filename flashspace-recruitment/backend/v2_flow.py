@@ -3,6 +3,7 @@ import copy
 import random
 import re
 from .v2_banks import GENERIC, BANKS, BANK_VERSION
+from .v2_design_bank import DESIGN, DESIGN_ASSESS
 
 
 class FlowError(ValueError):
@@ -14,8 +15,14 @@ def create_flow(bank_key, seed):
         raise FlowError('This role needs an approved domain question bank.')
     rng = random.Random(seed)
     bank = BANKS[bank_key]
-    selected = copy.deepcopy(GENERIC + rng.sample([q for q in bank if q['category']=='fundamental'], 2)
-                            + rng.sample([q for q in bank if q['category']=='scenario'], 2))
+    # Screening questions (bank-defined, e.g. availability/stipend/role-fit for
+    # the design internship) always run FIRST, once each; they draw from the
+    # domain follow-up budget like any other domain question. Doc ordering:
+    # Stage 1 screening -> generic conversation -> fundamentals -> cases.
+    screening = [q for q in bank if q['category'] == 'screening']
+    selected = copy.deepcopy(screening + GENERIC
+                            + rng.sample([q for q in bank if q['category'] == 'fundamental'], 2)
+                            + rng.sample([q for q in bank if q['category'] == 'scenario'], 2))
     for q in selected:
         q.update(kind='core', parent_id=None)
     return {'flow_version': 2, 'bank_version': BANK_VERSION, 'bank_key': bank_key,
@@ -91,8 +98,12 @@ def resolve_next(flow, followup=None):
 
 def public_flow(flow):
     active = flow['active']
+    core_total = len(flow['selected'])
+    # Two core follow-ups per stage is the budget; the bound matches the
+    # existing contract (10 core -> 14 turns; design adds 3 screening).
+    max_turns = core_total + 4
     return {'flow_version': 2, 'bank_version': flow['bank_version'], 'bank_key': flow['bank_key'],
             'version': flow['version'], 'status': flow['status'], 'answers': flow['answers'],
-            'core_total': 10, 'core_index': flow['core_index'], 'max_turns': 14,
+            'core_total': core_total, 'core_index': flow['core_index'], 'max_turns': max_turns,
             'active': {k: active[k] for k in ('id','text','stage','kind','category','parent_id')} if active else None,
             'processing': flow['pending_decision'] is not None}
