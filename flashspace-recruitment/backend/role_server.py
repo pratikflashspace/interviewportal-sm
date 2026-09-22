@@ -39,16 +39,19 @@ class RoleRepository:
             else:
                 db.execute('BEGIN IMMEDIATE')
             db.execute('CREATE TABLE IF NOT EXISTS managed_roles (id TEXT PRIMARY KEY, data TEXT NOT NULL, state TEXT NOT NULL, version INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by TEXT NOT NULL)')
-            seeded = db.execute('SELECT value FROM settings WHERE key=?', ('managed-roles-seeded-v1',)).fetchone()
-            if not seeded:
-                for seed in seeds:
-                    # Stable IDs preserve application snapshots and settings list:<id> mapping.
-                    data = {k: seed[k] for k in (*FIELDS, 'skills')}
-                    stamp = now()
-                    db.execute('INSERT INTO managed_roles VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
-                               (seed['id'], json.dumps(data), 'published' if seed['published'] else 'draft', 1, stamp, stamp, 'seed'))
-                db.execute('INSERT INTO settings(key,value) VALUES (?,?) ON CONFLICT(key) DO NOTHING',
-                           ('managed-roles-seeded-v1', 'true'))
+            # Seed-once, then insert-if-missing on every startup: roles added
+            # to roles.json in code (the recruiter dashboard is not ready, so
+            # publishing happens via GitHub push) appear after the next
+            # deploy without a recruiter login. Existing rows are never
+            # overwritten — admin edits, state changes (draft/closed) and
+            # versions persist across restarts and redeploys.
+            db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)')
+            for seed in seeds:
+                # Stable IDs preserve application snapshots and settings list:<id> mapping.
+                data = {k: seed[k] for k in (*FIELDS, 'skills')}
+                stamp = now()
+                db.execute('INSERT INTO managed_roles VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
+                           (seed['id'], json.dumps(data), 'published' if seed['published'] else 'draft', 1, stamp, stamp, 'seed'))
 
     @staticmethod
     def decode(row):

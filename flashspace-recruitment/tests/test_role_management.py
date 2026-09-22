@@ -79,6 +79,29 @@ class RoleTests(DurableTests):
         self.assertEqual(restart.role_repository.get('growth')['title'],'Renamed role')
         self.assertEqual(restart.role_repository.get('growth')['state'],'closed')
 
+    def test_restart_inserts_newly_added_seed_role_without_touching_edits(self):
+        # Publishing via code: a role appended to the seed list must appear
+        # after a restart even though the DB was already seeded once, and
+        # existing rows (renamed, closed) must stay untouched.
+        self.admin()
+        seed=self.req('/api/admin/roles/growth')['body']
+        result=self.req('/api/admin/roles/growth',self.payload(version=seed['version'],title='Renamed role'))
+        self.assertEqual(result['status'],200)
+        self.state(result['body'],'closed')
+        import copy
+        interior=copy.deepcopy(legacy.ROLE)
+        interior['id']='interior-designer'
+        interior['title']='Interior Designer'
+        restart=RoleManagementApp(self.temp.name+'/test.db',[legacy.ROLE,interior],self.ai,self.cu,False)
+        self.assertEqual(len(restart.role_repository.all()),2)
+        self.assertEqual(restart.role_repository.get('growth')['title'],'Renamed role')
+        self.assertEqual(restart.role_repository.get('growth')['state'],'closed')
+        self.assertEqual(restart.role_repository.get('interior-designer')['title'],'Interior Designer')
+        self.assertEqual(restart.role_repository.get('interior-designer')['state'],'published')
+        # a plain restart with the same seeds stays at 2 (no duplicates)
+        again=RoleManagementApp(self.temp.name+'/test.db',[legacy.ROLE,interior],self.ai,self.cu,False)
+        self.assertEqual(len(again.role_repository.all()),2)
+
     def test_rename_preserves_snapshot_and_clickup_mapping(self):
         self.register()
         a=self.apply()
