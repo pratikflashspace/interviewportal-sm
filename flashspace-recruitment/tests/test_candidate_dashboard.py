@@ -35,7 +35,7 @@ class DashboardTests(unittest.TestCase):
         for identifier,published,department,skills in [('similar',True,role['department'],['Unrelated']),('draft-match',False,role['department'],role['skills']),('different',True,'Unrelated',['Unrelated'])]:
             data={**role,'id':identifier,'title':identifier,'department':department,'skills':skills}
             with self.app.store.db() as db:
-                db.execute('INSERT INTO managed_roles VALUES (?,?,?,?,?,?,?)',(identifier,json.dumps(data),'published' if published else 'draft',1,'synthetic','synthetic','test'))
+                db.execute('INSERT INTO managed_roles(id,data,state,version,created_at,updated_at,updated_by) VALUES (?,?,?,?,?,?,?)',(identifier,json.dumps(data),'published' if published else 'draft',1,'synthetic','synthetic','test'))
         self.req('/api/applications',{'role_id':role['id'],'experience':'Synthetic dashboard application context','consent':True})
         found=self.req('/api/workspace/candidate/recommendations')['body']
         self.assertEqual([item['role']['id'] for item in found],['similar'])

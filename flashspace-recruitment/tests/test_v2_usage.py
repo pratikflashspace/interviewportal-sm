@@ -37,14 +37,26 @@ class UsageTests(unittest.TestCase):
 
     def test_application_burst_shared_across_operations_and_expires(self):
         with patch('time.time',return_value=1000):
-            for i in range(20):self.app.ai_quota(self.a,'voice-session-v2' if i%2 else 'intro-v2',5)
+            for i in range(40):self.app.ai_quota(self.a,'voice-session-v2' if i%2 else 'intro-v2',5)
             with self.assertRaises(APIError) as caught:self.app.ai_quota(self.a,'speech-v2',42)
             self.assertEqual(caught.exception.status,429)
         with patch('time.time',return_value=1061):self.app.ai_quota(self.a,'voice-session-v2',24)
 
+    def test_full_design_interview_fits_inside_one_burst_window(self):
+        # A 13-question design interview at maximum answering speed costs
+        # ~2 AI calls per question plus intro and voice reconnects (~30-35).
+        # The burst must never stop a legitimate mid-interview candidate.
+        with patch('time.time',return_value=1000):
+            for i in range(13):
+                self.app.ai_quota(self.a,'voice-session-v2',24)   # socket per question
+                self.app.ai_quota(self.a,'speech-v2',42)          # spoken question
+                self.app.ai_quota(self.a,'followup-v2',10)        # dig-deeper
+            # Still room: an extra reconnect-and-replay inside the same minute.
+            self.app.ai_quota(self.a,'speech-v2',42)
+
     def test_global_burst_shared_between_applications(self):
         with patch('time.time',return_value=1000):
-            for i in range(120):self.app.ai_quota({'id':str(i)},'voice-session-v2',24)
+            for i in range(180):self.app.ai_quota({'id':str(i)},'voice-session-v2',24)
             with self.assertRaises(APIError):self.app.ai_quota({'id':'next'},'voice-session-v2',24)
         with patch('time.time',return_value=1061):self.app.ai_quota({'id':'next'},'voice-session-v2',24)
 
@@ -65,5 +77,5 @@ class UsageTests(unittest.TestCase):
     def test_policy_uses_existing_atomic_store_with_short_windows(self):
         with patch.object(self.store,'quota') as quota:
             self.app.ai_quota(self.a,'voice-session-v2',24)
-        self.assertEqual([c.args for c in quota.call_args_list],[('v2-burst:application:synthetic-app',20,60),('v2-burst:global',120,60)])
+        self.assertEqual([c.args for c in quota.call_args_list],[('v2-burst:application:synthetic-app',40,60),('v2-burst:global',180,60)])
         self.assertIs(InterviewRelease.ai_quota,V2UsagePolicy.ai_quota)

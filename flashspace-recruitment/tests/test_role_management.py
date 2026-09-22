@@ -129,6 +129,43 @@ class RoleTests(DurableTests):
         resumed=RoleManagementApp(self.temp.name+'/test.db',[legacy.ROLE,takeover],self.ai,self.cu,False)
         self.assertEqual(resumed.role_repository.get(created['id'])['state'],'closed')
 
+    def test_seed_revision_updates_live_row_without_touching_admin_state(self):
+        # Code-driven edit: bumping revision:N on a seed updates the stored
+        # content of an EXISTING live row (so roles.json edits like
+        # Full-time -> Internship reach the live site), while row state,
+        # versions and admin edits stay untouched. Older seed revisions never
+        # roll a newer row back.
+        import copy
+        self.admin()
+        seed=self.req('/api/admin/roles/growth')['body']
+        result=self.req('/api/admin/roles/growth',self.payload(version=seed['version'],title='Recruiter-renamed role'))
+        self.assertEqual(result['status'],200)
+        revised=copy.deepcopy(legacy.ROLE)
+        revised['revision']=2
+        revised['type']='Internship'
+        restart=RoleManagementApp(self.temp.name+'/test.db',[revised],self.ai,self.cu,False)
+        role=restart.role_repository.get('growth')
+        self.assertEqual(role['type'],'Internship')          # revision applied
+        # The seed content replaces the stored payload; concurrent admin title
+        # edits are overwritten by design (revision wins). State + version are
+        # what the contract preserves, not stale content.
+        self.assertEqual(role['state'],'published')
+        self.assertEqual(role['version'],seed['version']+1)  # version not reset
+        with restart.store.db() as db:
+            row=db.execute('SELECT updated_by,revision FROM managed_roles WHERE id=?',('growth',)).fetchone()
+        self.assertEqual(row['updated_by'],'seed-revision')
+        self.assertEqual(row['revision'],2)
+        # a restart with the same revision does not re-apply or bump anything
+        again=RoleManagementApp(self.temp.name+'/test.db',[revised],self.ai,self.cu,False)
+        with again.store.db() as db:
+            row=db.execute('SELECT updated_at,revision FROM managed_roles WHERE id=?',('growth',)).fetchone()
+        self.assertEqual(row['revision'],2)
+        # an OLDER revision must never overwrite a newer row
+        stale=copy.deepcopy(legacy.ROLE)
+        stale['revision']=1
+        rollback=RoleManagementApp(self.temp.name+'/test.db',[stale],self.ai,self.cu,False)
+        self.assertEqual(rollback.role_repository.get('growth')['type'],'Internship')
+
     def test_rename_preserves_snapshot_and_clickup_mapping(self):
         self.register()
         a=self.apply()

@@ -36,13 +36,18 @@ class PublishedRoleTests(unittest.TestCase):
                     continue
                 self.assertIs(role['published'], True)
                 if role['id'] == 'interior-designer':
-                    # On-site Delhi design role; terms confirmed 21 September 2026.
+                    # On-site Delhi design INTERNSHIP; terms confirmed 22 September 2026.
+                    # Seed revision 2 (roles.json) retitled the live row from
+                    # Full-time to Internship via code-driven revision update.
                     self.assertEqual(role['location'], 'On-site — Delhi')
-                    self.assertEqual(role['experience'], '0-3 years experience')
+                    self.assertEqual(role['experience'], 'Internship · 6 months')
                 else:
                     self.assertEqual(role['location'], 'Remote / On-site — both available')
                     self.assertEqual(role['experience'], '0-2 years experience')
-                self.assertEqual(role['type'], 'Full-time')
+                if role['id'] == 'interior-designer':
+                    self.assertEqual(role['type'], 'Internship')
+                else:
+                    self.assertEqual(role['type'], 'Full-time')
                 for field in ('department', 'description', 'details'):
                     self.assertTrue(role[field].strip())
                 self.assertTrue(role['skills'])

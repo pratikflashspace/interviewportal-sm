@@ -44,20 +44,39 @@ class RoleRepository:
             # publishing happens via GitHub push) appear after the next
             # deploy without a recruiter login. Existing rows are never
             # overwritten — admin edits, state changes (draft/closed) and
-            # versions persist across restarts and redeploys. Exception:
+            # versions persist across restarts and redeploys. Two exceptions:
             # a seed marked published:false force-closes its DB row on every
             # startup — that is the code-driven takedown path for roles that
-            # were published live but are no longer hiring.
+            # were published live but are no longer hiring. And a seed with
+            # revision:N updates the stored content ONLY when the row's
+            # revision is older — code-driven edits (e.g. Full-time →
+            # Internship) reach existing live rows without a recruiter login,
+            # while admin edits made at a later revision still win.
             db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)')
+            # Idempotent column add for pre-existing databases (SQLite and
+            # Postgres both reject ADD COLUMN when the column already exists).
+            if getattr(self.store, 'is_postgres', False):
+                columns = {row['column_name'] for row in db.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name='managed_roles'")}
+            else:
+                columns = {row['name'] for row in db.execute(
+                    "SELECT name FROM pragma_table_info('managed_roles')")}
+            if 'revision' not in columns:
+                db.execute('ALTER TABLE managed_roles ADD COLUMN revision INTEGER NOT NULL DEFAULT 1')
             for seed in seeds:
                 # Stable IDs preserve application snapshots and settings list:<id> mapping.
                 data = {k: seed[k] for k in (*FIELDS, 'skills')}
                 stamp = now()
-                db.execute('INSERT INTO managed_roles VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
-                           (seed['id'], json.dumps(data), 'published' if seed['published'] else 'draft', 1, stamp, stamp, 'seed'))
+                raw = seed.get('revision', 1)
+                revision = int(raw) if str(raw).isdigit() else 1
+                db.execute('INSERT INTO managed_roles(id,data,state,version,created_at,updated_at,updated_by,revision) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
+                           (seed['id'], json.dumps(data), 'published' if seed['published'] else 'draft', 1, stamp, stamp, 'seed', revision))
                 if not seed['published']:
                     db.execute('UPDATE managed_roles SET state=?,updated_at=?,updated_by=? WHERE id=?',
                                ('closed', stamp, 'seed-takedown', seed['id']))
+                elif revision > 1:
+                    db.execute('UPDATE managed_roles SET data=?,revision=?,updated_at=?,updated_by=? WHERE id=? AND revision<?',
+                               (json.dumps(data), revision, stamp, 'seed-revision', seed['id'], revision))
 
     @staticmethod
     def decode(row):
@@ -74,7 +93,7 @@ class RoleRepository:
         data = validate_role(body)
         identifier, stamp = 'role-' + uuid.uuid4().hex, now()
         with self.store.db() as db:
-            db.execute('INSERT INTO managed_roles VALUES (?,?,?,?,?,?,?)',
+            db.execute('INSERT INTO managed_roles(id,data,state,version,created_at,updated_at,updated_by,revision) VALUES (?,?,?,?,?,?,?,1)',
                        (identifier, json.dumps(data), 'draft', 1, stamp, stamp, actor))
         return self.get(identifier)
 

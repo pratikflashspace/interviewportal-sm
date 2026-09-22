@@ -17,9 +17,15 @@ class V2UsagePolicy:
             return super().ai_quota(a, kind, limit)
         # New keys intentionally do not consult or erase old cumulative counters.
         # One shared application bucket prevents bypass by alternating operations.
+        # Sizing: a full v2 interview costs ~2 AI calls per question (speech +
+        # follow-up) plus voice-session reconnects and the intro. The largest
+        # bank (design, 13 questions) needs ~30-35 calls at maximum answering
+        # speed; 40 lets a fast candidate finish inside one window while the
+        # 60-second reset still bounds abuse. Staged mid-interview 429s were
+        # stopping real interviews at question ~7-8 (2026-09-22).
         for key, maximum, scope in (
-            ('v2-burst:application:' + a['id'], 20, 'application'),
-            ('v2-burst:global', 120, 'workspace'),
+            ('v2-burst:application:' + a['id'], 40, 'application'),
+            ('v2-burst:global', 180, 'workspace'),
         ):
             try:
                 self.store.quota(key, maximum, 60)
