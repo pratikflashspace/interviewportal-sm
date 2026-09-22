@@ -46,5 +46,17 @@
     "details": "Work on live interior design projects from concept to execution. Develop design concepts, mood boards, layouts and 3D visualisations, and present them clearly to clients and the team. Select materials, finishes, furniture and fixtures within project budgets. Coordinate with vendors, contractors and site teams to keep execution true to the design. Visit sites, track progress and resolve on-ground issues during execution. Use design and drafting tools (SketchUp, AutoCAD, 3ds Max or similar) and AI tools to speed up concepts, renders and presentations.",
     "skills": ["Interior design", "Space planning", "SketchUp", "AutoCAD", "3D visualisation", "Material selection", "Client presentation"],
     "published": true
+  },
+  {
+    "id": "role-4ddb6f2e207a4e9487d3ca86e3ab01e1",
+    "title": "AI Engineer",
+    "department": "IT",
+    "location": "Remote/On-site - Both Available",
+    "type": "Full Time",
+    "experience": "0-1",
+    "description": "We are looking for an AI Engineer to build and integrate practical AI and Generative AI solutions. The role involves working with Python, APIs, LLMs, machine learning models, and AI tools to develop, test, and improve intelligent applications.",
+    "details": "- Develop and integrate AI/ML and Generative AI solutions.\n- Build AI-powered applications using Python and relevant frameworks.\n- Work with LLMs, APIs, prompt engineering, and AI tools.\n- Develop and integrate REST APIs and external AI services.\n- Experiment with different models and approaches to solve practical problems.\n- Build workflows involving LLMs, RAG, agents, or other AI application techniques.\n- Test, debug, evaluate, and improve AI systems.\n- Work with data preparation, model outputs, and evaluation.\n- Collaborate with the team to understand requirements and convert them into working solutions.\n- Document implementations, experiments, and results.\n\nRequirements:\n- Strong understanding of Python programming.\n- Basic understanding of Machine Learning and AI concepts.\n- Familiarity with Generative AI and Large Language Models (LLMs).\n- Understanding of APIs and how to integrate external services.\n- Familiarity with prompt engineering and AI development tools.\n- Basic understanding of data structures, algorithms, and software development practices.\n- Ability to debug problems and approach technical challenges logically.\n- Hands-on project experience in AI/ML, Generative AI, or software development is preferred.\n- Candidates should be willing to learn new AI technologies and work on practical AI applications.",
+    "skills": ["Python", "Artificial Intelligence", "Machine Learning", "Generative AI", "LLMs", "Prompt Engineering", "APIs", "REST APIs", "RAG", "AI Agents", "LangChain", "Data Structures", "Algorithms", "Model Evaluation", "AI Tools", "Git", "GitHub"],
+    "published": false
   }
 ]

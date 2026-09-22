@@ -102,6 +102,33 @@ class RoleTests(DurableTests):
         again=RoleManagementApp(self.temp.name+'/test.db',[legacy.ROLE,interior],self.ai,self.cu,False)
         self.assertEqual(len(again.role_repository.all()),2)
 
+    def test_unpublished_seed_force_closes_published_role(self):
+        # Code-driven takedown: a role that exists in the DB (e.g. created
+        # via the admin API) is removed from the public site by adding it to
+        # the seed list with published:false — every startup force-closes it.
+        self.admin()
+        data={k:v for k,v in legacy.ROLE.items() if k not in ('id','published')}
+        created=self.app.role_repository.create(data,'synthetic-admin')
+        self.state(self.app.role_repository.get(created['id']),'published')
+        import copy
+        takeover=copy.deepcopy(legacy.ROLE)
+        takeover['id']=created['id']
+        takeover['published']=False
+        restart=RoleManagementApp(self.temp.name+'/test.db',[legacy.ROLE,takeover],self.ai,self.cu,False)
+        role=restart.role_repository.get(created['id'])
+        self.assertEqual(role['state'],'closed')
+        with restart.store.db() as db:
+            row=db.execute('SELECT updated_by FROM managed_roles WHERE id=?',(created['id'],)).fetchone()
+        self.assertEqual(row['updated_by'],'seed-takedown')
+        # closed roles are hidden from the public list
+        public=[r for r in restart.role_repository.all() if r['published']]
+        self.assertNotIn(created['id'],[r['id'] for r in public])
+        # re-publishing later = flip the seed back to true; state then only
+        # changes through the admin API (published seeds never overwrite)
+        takeover['published']=True
+        resumed=RoleManagementApp(self.temp.name+'/test.db',[legacy.ROLE,takeover],self.ai,self.cu,False)
+        self.assertEqual(resumed.role_repository.get(created['id'])['state'],'closed')
+
     def test_rename_preserves_snapshot_and_clickup_mapping(self):
         self.register()
         a=self.apply()

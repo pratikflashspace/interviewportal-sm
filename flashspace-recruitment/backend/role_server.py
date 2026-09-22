@@ -44,7 +44,10 @@ class RoleRepository:
             # publishing happens via GitHub push) appear after the next
             # deploy without a recruiter login. Existing rows are never
             # overwritten — admin edits, state changes (draft/closed) and
-            # versions persist across restarts and redeploys.
+            # versions persist across restarts and redeploys. Exception:
+            # a seed marked published:false force-closes its DB row on every
+            # startup — that is the code-driven takedown path for roles that
+            # were published live but are no longer hiring.
             db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)')
             for seed in seeds:
                 # Stable IDs preserve application snapshots and settings list:<id> mapping.
@@ -52,6 +55,9 @@ class RoleRepository:
                 stamp = now()
                 db.execute('INSERT INTO managed_roles VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
                            (seed['id'], json.dumps(data), 'published' if seed['published'] else 'draft', 1, stamp, stamp, 'seed'))
+                if not seed['published']:
+                    db.execute('UPDATE managed_roles SET state=?,updated_at=?,updated_by=? WHERE id=?',
+                               ('closed', stamp, 'seed-takedown', seed['id']))
 
     @staticmethod
     def decode(row):
