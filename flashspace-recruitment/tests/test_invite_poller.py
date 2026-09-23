@@ -382,6 +382,28 @@ class ATSModeTests(unittest.TestCase):
         state = ip.load_state(self.state_path)
         self.assertNotEqual(state['tasks'].get('a1', {}).get('status'), 'sent')
 
+    def test_gave_up_task_does_not_send_again_while_yes(self):
+        # 2026-09-23 incident regression: an undeliverable number received a
+        # fresh send attempt every cycle for ~18 hours (364 attempts). Once
+        # the poller gives up after 3 retries, the task must stay terminal
+        # while the field remains Yes; only a manual No->Yes re-arms it.
+        self.cw = FakeCW(deliver_status='failed')
+        self.set_invite('a1', 'yes-id')
+        for _ in range(4):  # cycle 1-3 retry; cycle 4 sends then gives up
+            self.run_cycle()
+        self.assertEqual(len(self.cw.sent), 4)
+        state = ip.load_state(self.state_path)
+        self.assertTrue(state['tasks']['a1']['status'].startswith('failed (gave up'))
+        # more cycles: still no further sends — the OLD bug sent one per cycle
+        self.run_cycle(); self.run_cycle(); self.run_cycle()
+        self.assertEqual(len(self.cw.sent), 4)
+        # No->Yes re-arm still works: reset via deselect, then send once more
+        self.set_invite('a1', None)
+        self.run_cycle()
+        self.set_invite('a1', 'yes-id')
+        self.run_cycle()
+        self.assertEqual(len(self.cw.sent), 5)
+
     def test_unprofiled_tasks_stay_empty(self):
         # a3 has no role/profile/labels at all: field stays untouched.
         state = ip.load_state(self.state_path)

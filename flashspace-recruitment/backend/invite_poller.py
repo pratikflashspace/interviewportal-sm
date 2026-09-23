@@ -470,7 +470,15 @@ def _deliver(cu, cw, state, tid, name, role, phone, actions, log, dry, delivery=
 
 def _already_sent(state, tid):
     entry = state['tasks'].get(tid) or {}
-    return entry.get('saw_yes') and entry.get('status') == 'sent'
+    if not entry.get('saw_yes'):
+        return False
+    status = str(entry.get('status', ''))
+    # While the task stays Yes, both a confirmed send AND a gave-up failure
+    # block further attempts. The retry cap must stop SENDING, not just the
+    # failure comments: 2026-09-23 incident — one undeliverable number
+    # received a fresh send attempt every cycle for ~18 hours (364 attempts)
+    # because the gave-up state was not treated as terminal here.
+    return status == 'sent' or status.startswith('failed (gave up')
 
 
 def _reset_if_deselected(state, tid, selected):
