@@ -4,7 +4,7 @@ Six actual generic sections take precedence over the source's stale Q7 reference
 Truncated source follow-up excluded. Routine wording narrowed to responsibilities
 rather than private lifestyle. Domain questions retain source wording.
 """
-BANK_VERSION = 'flashspace-banks-2026-09-10-v1'
+BANK_VERSION = 'flashspace-banks-2026-09-23-v2'
 
 
 def rows(prefix, stage, category, pairs):

@@ -16,20 +16,21 @@ class FlowTests(unittest.TestCase):
             self.assertEqual([a['stage'] for a in f['answers']],['generic']*6+['domain']*4)
             self.assertEqual([a['category'] for a in f['answers'][-4:]],['fundamental']*2+['scenario']*2)
     def test_design_bank_screening_runs_first(self):
-        # Pratik's Interior_Design.docx bank: 3 screening questions (availability,
-        # stipend, role responsibilities) precede the generic conversation, then
-        # fundamentals, then cases. Selection is pinned per seed.
+        # Pratik's mandatory screening (2026-09-23): vendor/turnkey, role
+        # responsibility, 6-month availability, stipend — ALL FOUR asked to
+        # every candidate before the generic conversation, then fundamentals,
+        # then cases. Selection is pinned per seed.
         f=create_flow('design',10)
-        self.assertEqual([a['id'] for a in f['selected'][:3]],
-                         ['design-screen-1','design-screen-2','design-screen-3'])
-        self.assertEqual([q['category'] for q in f['selected'][:3]],['screening']*3)
-        self.assertTrue(all(q['id'].startswith('design-') for q in f['selected'][9:]))
+        self.assertEqual([a['id'] for a in f['selected'][:4]],
+                         ['design-screen-1','design-screen-2','design-screen-3','design-screen-4'])
+        self.assertEqual([q['category'] for q in f['selected'][:4]],['screening']*4)
+        self.assertTrue(all(q['id'].startswith('design-') for q in f['selected'][10:]))
         g=self.run_flow('design')
-        self.assertEqual(len(g['answers']),13)  # 3 screening + 6 generic + 2 fundamental + 2 scenario
-        self.assertEqual([a['stage'] for a in g['answers']],['domain']*3+['generic']*6+['domain']*4)
+        self.assertEqual(len(g['answers']),14)  # 4 screening + 6 generic + 2 fundamental + 2 scenario
+        self.assertEqual([a['stage'] for a in g['answers']],['domain']*4+['generic']*6+['domain']*4)
         self.assertEqual([a['category'] for a in g['answers'][-4:]],['fundamental']*2+['scenario']*2)
         p=public_flow(g)
-        self.assertEqual(p['core_total'],13);self.assertEqual(p['max_turns'],17)
+        self.assertEqual(p['core_total'],14);self.assertEqual(p['max_turns'],18)
     def test_followup_budget_and_parent(self):
         f=self.run_flow(followup=0)
         self.assertLessEqual(len(f['answers']),14)

@@ -45,6 +45,50 @@ class V2Tests(DurableBackendTests):
         self.assertEqual(self.req('/api/v2/applications/'+f['application_id'])['status'],404)
         self.cookie=cookie
         self.assertEqual(self.req('/api/v2/applications/'+f['application_id'])['body']['active'],f['active'])
+    def test_inflight_upgraded_with_new_mandatory_screening(self):
+        # 2026-09-23 regression: interviews created on an older bank version
+        # must be asked newly-added MANDATORY screening questions on resume,
+        # without losing committed answers.
+        import copy, json
+        from backend.v2_flow import commit_answer, resolve_next
+        from backend.v2_banks import BANK_VERSION
+        with self.app.store.db() as db:db.execute("UPDATE settings SET value='design' WHERE key='v2-bank:growth'")
+        self.register();f=self.new_v2();aid=f['application_id']
+        # Simulate a stale flow: older bank version, one answer committed.
+        stored=self.app.flow(aid)
+        stored['bank_version']='flashspace-banks-2026-09-10-v1'
+        with self.app.store.db() as db:
+            db.execute('UPDATE interview_v2 SET data=? WHERE application_id=?',(json.dumps(stored),aid))
+        answered_before=len(stored['answers'])
+        # Resume: the GET route must upgrade the flow.
+        response=self.req('/api/v2/applications/'+aid)
+        self.assertEqual(response['status'],200,response['body'])
+        upgraded=self.app.flow(aid)
+        self.assertEqual(upgraded['bank_version'],BANK_VERSION)
+        # No committed answer was lost
+        self.assertEqual(len(upgraded['answers']),answered_before)
+        # The very next question the candidate faces is a mandatory screening one
+        self.assertEqual(upgraded['active']['category'],'screening')
+        ids=[upgraded['active']['id']]+[q['id'] for q in upgraded['selected']]
+        for i in range(4):
+            self.assertIn('design-screen-'+str(i+1),ids)
+        # nothing queued twice inside selected (active is selected[core_index]
+        # by engine design, so it legitimately appears in both lists)
+        sel_ids=[q['id'] for q in upgraded['selected']]
+        self.assertEqual(len(sel_ids),len(set(sel_ids)))
+        self.assertIn(upgraded['active']['id'],sel_ids)
+        # Now answer one screening question and resume again: no re-ask.
+        up,_=commit_answer(upgraded,'new-event-1',upgraded['version'],upgraded['active']['id'],'I would compare vendors.','t')
+        up=resolve_next(up)
+        with self.app.store.db() as db:
+            db.execute('UPDATE interview_v2 SET data=? WHERE application_id=?',(json.dumps(up),aid))
+        again=self.req('/api/v2/applications/'+aid)['body']
+        self.assertNotEqual(again['active']['id'],upgraded['active']['id'])
+        ids2=[q['id'] for q in self.app.flow(aid)['selected']]
+        self.assertEqual(len(ids2),len(set(ids2)))
+        # the answered screening question is never ACTIVE again
+        self.assertNotEqual(again['active']['id'],'design-screen-1')
+        self.assertEqual(again['core_index'],1)
     def test_answer_saved_before_ai_and_replay(self):
         self.register();f=self.new_v2();aid=f['application_id'];seen=[]
         def fail(*args):

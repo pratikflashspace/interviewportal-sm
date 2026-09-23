@@ -11,7 +11,7 @@ import uuid
 from .role_server import RoleManagementApp
 from .sarvam_server import SarvamAI
 from .server import APIError, ClickUp, now, public_app
-from .v2_banks import BANKS, DEFAULT_MAPPINGS
+from .v2_banks import BANKS, DEFAULT_MAPPINGS, BANK_VERSION, GENERIC
 from .v2_flow import create_flow, commit_answer, resolve_next, public_flow, FlowError
 
 CONSENT = 'flashspace-sarvam-conversation-v2'
@@ -159,6 +159,69 @@ class InterviewV2App(RoleManagementApp):
             row=db.execute('SELECT value FROM settings WHERE key=?',('v2-bank:'+role_id,)).fetchone()
         return row['value'] if row else DEFAULT_MAPPINGS.get(role_id)
 
+    def upgrade_flow_if_stale(self, a, f):
+        """Rebuild the REMAINING question list when the bank content changed.
+
+        Committed answers stay untouched and in order. Any MANDATORY
+        screening question the candidate hasn't been asked yet is moved to
+        the front of the remaining queue, so every candidate is asked all
+        mandatory questions even if their interview started on an older bank
+        version. Also heals flows created before screening existed at all.
+        Safe no-op for banks whose version didn't change.
+        """
+        if not f or f.get('status') == 'completed':
+            return f
+        if f.get('bank_version') == BANK_VERSION:
+            return f
+        bank_key = f.get('bank_key')
+        if bank_key not in BANKS:
+            return f
+        bank = BANKS[bank_key]
+        answered_ids = {ans['question_id'] for ans in f.get('answers') or []}
+        # Answered mandatory screening stays; unanswered mandatory screening
+        # goes FIRST (before everything else that remains).
+        mandatory = [q for q in bank if q['category'] == 'screening'
+                     and q['id'] not in answered_ids]
+        mandatory_ids = {q['id'] for q in mandatory}
+        # Keep the remaining core questions the candidate was originally
+        # assigned (their sample is part of their record): bank questions
+        # that still exist, plus the generic conversation, minus anything
+        # already answered. Mandatory questions pulled forward are excluded
+        # here so nothing is queued twice.
+        bank_ids = {q['id'] for q in bank}
+        generic_ids = {q['id'] for q in GENERIC}
+        remaining = [q for q in f.get('selected', [])
+                     if q['id'] not in answered_ids and q['id'] not in mandatory_ids
+                     and (q['id'] in bank_ids or q['id'] in generic_ids)]
+        # Active question is being re-asked right now; keep it in the queue.
+        active_id = (f.get('active') or {}).get('id')
+        if active_id and active_id not in answered_ids \
+           and active_id not in {q['id'] for q in mandatory} \
+           and not any(q['id'] == active_id for q in remaining):
+            active_q = next((q for q in list(bank) + list(GENERIC) if q['id'] == active_id), None)
+            if active_q:
+                remaining.insert(0, active_q)
+        new_selected = mandatory + remaining
+        if not new_selected:
+            return f
+        f = copy.deepcopy(f)
+        f['bank_version'] = BANK_VERSION
+        # Bank rows carry only id/stage/category/text/followups; the engine
+        # stamps kind/parent_id at flow creation. public_flow and commit_answer
+        # require them, so every rebuilt question gets the same stamp.
+        for q in new_selected:
+            q.setdefault('kind', 'core')
+            q.setdefault('parent_id', None)
+        f['selected'] = new_selected
+        # The candidate resumes at the first unanswered question.
+        f['core_index'] = 0
+        if not f.get('active') and new_selected:
+            f['active'] = copy.deepcopy(new_selected[0])
+        elif f.get('active'):
+            f['active'] = copy.deepcopy(new_selected[0])
+        self.save_flow(a, f)
+        return f
+
     def save_flow(self, a, flow):
         # Atomic mirror: the worker cannot observe a completed application without
         # its full committed v2 answers. Never copy stale remote identity fields.
@@ -228,7 +291,15 @@ class InterviewV2App(RoleManagementApp):
                 # reconsume quota or lose/duplicate the answer.
                 if f['pending_decision'] and aid not in self.deciding:
                     f=resolve_next(f);self.save_flow(a,f);a=self.store.get(aid)
-                if method=='GET' and action is None:return {'application_id':aid,**public_flow(f)},[]
+                if method=='GET' and action is None:
+                    # Mandatory-screening upgrade: an in-progress interview whose
+                    # bank content changed (e.g. design screening 3 -> 4 mandatory
+                    # questions, 2026-09-23) rebuilds the REMAINING question list on
+                    # resume. Committed answers are never lost or reordered; the
+                    # new mandatory questions the candidate hasn't answered yet are
+                    # inserted next so EVERY candidate is asked them.
+                    f=self.upgrade_flow_if_stale(a,f)
+                    return {'application_id':aid,**public_flow(f)},[]
                 if method=='POST' and action=='speech':
                     if not f['active']:raise APIError(409,'No question is ready.')
                     if body.get('question_id')!=f['active']['id']:raise APIError(409,'Question changed.')
