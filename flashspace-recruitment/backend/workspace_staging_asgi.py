@@ -10,7 +10,7 @@ from starlette.routing import Route, WebSocketRoute, Mount
 from . import v2_stream as bridge
 from .candidate_account import WorkspaceApp
 
-RENDER_SERVICE_ORIGIN='https://interviewportal-sm-1.onrender.com'
+RENDER_SERVICE_ORIGIN=os.getenv('RENDER_SERVICE_ORIGIN','https://interviewportal-sm-1.onrender.com').rstrip('/')
 # Backwards-compatible alias: the original single-origin name.
 STAGING_ORIGIN=RENDER_SERVICE_ORIGIN
 # Public front-ends for this service. The custom domain is served alongside the
