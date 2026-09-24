@@ -19,7 +19,9 @@ class StagingGuardTests(unittest.TestCase):
                 with patch.dict(os.environ,env,clear=True),self.assertRaises(RuntimeError):runtime.validate_staging()
     def test_custom_public_domain_accepted_as_app_origin(self):
         # The candidate site is fronted by a custom domain alongside the Render URL.
-        for origin in ('https://recrut.teamlens.co', 'https://interviewportal-sm-1.onrender.com'):
+        # PUBLIC_ORIGINS is derived from RENDER_SERVICE_ORIGIN, so the accepted
+        # origins are exactly the ones this deployment serves (any account/URL).
+        for origin in sorted(runtime.PUBLIC_ORIGINS):
             with self.subTest(origin=origin):
                 env=self.env();env['APP_ORIGIN']=origin
                 with patch.dict(os.environ,env,clear=True):runtime.validate_staging()
